@@ -25,12 +25,13 @@ class BleScanner(private val context: Context) {
     private var scanner: BluetoothLeScanner? = null
 
     // Callback appelé pour chaque pair découvert
-    var onPeerDiscovered: ((address: String, shortId: String) -> Unit)? = null
+    var onPeerDiscovered: ((address: String, shortId: String, rssi: Int) -> Unit)? = null
+
 
     private val scanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             val address = result.device.address
-
+            val rssi = result.rssi
             // Extrait le shortId depuis le manufacturer data
             val manufacturerData = result.scanRecord
                 ?.getManufacturerSpecificData(0x1234)
@@ -39,7 +40,7 @@ class BleScanner(private val context: Context) {
                 ?: return
 
             Log.d(TAG, "Pair découvert : $shortId @ $address")
-            onPeerDiscovered?.invoke(address, shortId)
+            onPeerDiscovered?.invoke(address, shortId, rssi)
         }
 
         override fun onScanFailed(errorCode: Int) {

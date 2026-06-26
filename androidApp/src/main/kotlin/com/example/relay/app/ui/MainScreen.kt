@@ -69,18 +69,31 @@ fun MainScreen(viewModel: MainViewModel) {
             // Indicateur réseau
             val networkColor = if (peers.isEmpty()) Color(0xFF444444)
                                else Color(0xFF00C853)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(8.dp)
-                        .background(networkColor, RoundedCornerShape(4.dp))
-                )
-                Spacer(Modifier.width(6.dp))
+
+            Column(horizontalAlignment = Alignment.End) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .background(networkColor, RoundedCornerShape(4.dp))
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        "${nodeTracker} pairs directs",
+                        color = networkColor,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+                // Niveau batterie
                 Text(
-                    if (peers.isEmpty()) "isolé"
-                    else "${peers.size} pair${if (peers.size > 1) "s" else ""}",
-                    color = networkColor,
-                    fontSize = 11.sp,
+                    "🔋 $batteryLevel%",
+                    color = when {
+                        batteryLevel <= 15 -> Color(0xFFFF6B00)
+                        batteryLevel <= 30 -> Color(0xFFFFB800)
+                        else               -> Color(0xFF666666)
+                    },
+                    fontSize = 10.sp,
                     fontFamily = FontFamily.Monospace
                 )
             }

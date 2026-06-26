@@ -43,6 +43,9 @@ class MeshService : Service() {
     private lateinit var router: MeshRouter
     private lateinit var gossip: PreKeyGossip
     private lateinit var deferred: DeferredSession
+    private lateinit var nodeTracker: NodeTracker
+    private lateinit var batteryMonitor: BatteryMonitor
+    private lateinit var sprayAndWait: SprayAndWait
 
     private val peers = mutableMapOf<String, String>() // shortId → MAC
 
@@ -51,12 +54,14 @@ class MeshService : Service() {
         org.signal.libsignal.protocol.IdentityKeyPair(ByteArray(0))
     private var localShortId = ""
 
+
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
         startForeground(NOTIF_ID, buildNotification("Démarrage…"))
 
         repo = RelayRepository(this)
+
 
         scope.launch {
             // Charge ou crée l'identité persistante
@@ -66,10 +71,16 @@ class MeshService : Service() {
             gossip = PreKeyGossip(localIdentity)
             deferred = DeferredSession(localIdentity)
 
-            router = MeshRouter(localShortId)
+            nodeTracker = NodeTracker()
+            batteryMonitor = BatteryMonitor(this@MeshService)
+            batteryMonitor.start()
+
+
+            router = MeshRouter(localShortId, nodeTracker, batteryMonitor)
             advertiser = BleAdvertiser(this@MeshService)
             scanner = BleScanner(this@MeshService)
             gattServer = BleGattServer(this@MeshService)
+
 
             setupRouter()
             setupScanner()
@@ -81,6 +92,12 @@ class MeshService : Service() {
 
             updateNotification("Mesh actif — $localShortId")
             Log.d(TAG, "MeshService prêt — $localShortId")
+            scope.launch {
+                while (isActive) {
+                    delay(600_000)
+                    nodeTracker.prune()
+                }
+            }
         }
     }
 
@@ -88,22 +105,44 @@ class MeshService : Service() {
 
     private fun setupRouter() {
         router.onMessageForUs = { packet ->
-            scope.launch { handleIncomingMessage(packet) }
+            scope.launch { handleIncomingPacket(packet) }
         }
-        router.onPacketToRelay = { packet ->
-            scope.launch { relayToAllPeers(packet) }
+
+        // Maintenant onPacketToRelay reçoit une liste d'adresses cibles
+        router.onPacketToRelay = { packet, targetAddresses ->
+            scope.launch {
+                targetAddresses.forEach { address ->
+                    sendPacketTo(address, packet)
+                }
+            }
         }
+
         router.onPreKeyReceived = { senderId, bundleBytes ->
-            scope.launch { handlePreKeyGossip(senderId, bundleBytes) }
+            scope.launch {
+                repo.upgradeTrust(senderId, TrustLevel.YELLOW)
+                nodeTracker.markPreKeyExchanged(senderId)
+            }
+        }
+
+        router.onAckReceived = { messageId ->
+            scope.launch { repo.markDelivered(messageId) }
         }
     }
-
     private fun setupScanner() {
-        scanner.onPeerDiscovered = { address, shortId ->
-            if (shortId != localShortId && !peers.containsKey(shortId)) {
-                peers[shortId] = address
-                Log.d(TAG, "Pair découvert : $shortId")
-                scope.launch { sendOurPreKeys(address) }
+        scanner.onPeerDiscovered = { address, shortId, rssi ->
+            if (shortId != localShortId) {
+                val isNew = !nodeTracker.getActiveNodes()
+                    .any { it.shortId == shortId }
+                nodeTracker.seen(shortId, address, rssi)
+
+                if (isNew) {
+                    Log.d(TAG, "Nouveau pair : $shortId")
+                    router.onNewPeerAvailable(shortId, address)
+                    scope.launch { sendOurPreKeys(address) }
+                    updateNotification(
+                        "Mesh actif — ${nodeTracker.activeCount()} pairs"
+                    )
+                }
             }
         }
     }
@@ -203,11 +242,32 @@ class MeshService : Service() {
                 putExtra(EXTRA_PLAINTEXT, plaintext)
             })
 
+            // Envoie un ACK en retour
+            val ack = RelayPacket(
+                id = UUID.randomUUID().toString(),
+                type = PacketType.ACK,
+                senderId = localShortId,
+                recipientId = packet.senderId,
+                payload = packet.id.toByteArray(),  // ID du message acquitté
+                signature = signPayload(packet.id.toByteArray()),
+                ttl = RelayPacket.MAX_HOPS
+            )
+            relayToRouter(ack)
+
         } catch (e: Exception) {
             Log.e(TAG, "Erreur déchiffrement : ${e.message}")
         }
     }
 
+    private fun relayToRouter(packet: RelayPacket) {
+        val relays = nodeTracker.getBestRelays(
+            excludeShortId = localShortId,
+            count = SprayAndWait.SPRAY_COPIES
+        )
+        if (relays.isNotEmpty()) {
+            relays.forEach { sendPacketTo(it.macAddress, packet) }
+        }
+    }
     // ─── Gossip prekeys ──────────────────────────────────────
 
     private suspend fun sendOurPreKeys(peerAddress: String) {

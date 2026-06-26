@@ -35,6 +35,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _peers = MutableStateFlow<List<String>>(emptyList())
     val peers: StateFlow<List<String>> = _peers
 
+    private val _batteryLevel = MutableStateFlow(100)
+    val batteryLevel: StateFlow<Int> = _batteryLevel
     // Écoute les broadcasts du MeshService
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -56,6 +58,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             repo.observeContacts().collect { contacts ->
                 _peers.value = contacts.map { it.shortId }
             }
+        }
+
+        viewModelScope.launch {
+            // Écoute les updates batterie du service via broadcast
+            // Sprint 6 : on utilisera un Flow partagé
         }
 
         // Enregistre le receiver
