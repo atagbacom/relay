@@ -5,106 +5,128 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.graphics.Bitmap
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.relay.app.crypto.QrKeyExchange
+import com.relay.app.crypto.TrustLevel
+import com.relay.app.mesh.BatteryMonitor
 import com.relay.app.mesh.MeshService
+import com.relay.app.model.RelayContact
 import com.relay.app.repository.RelayRepository
 import com.relay.app.storage.MessageEntity
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
-data class UiMessage(
-    val id: String,
-    val text: String,
-    val direction: String,   // "IN" | "OUT"
-    val senderOrRecipient: String,
-    val trustLevel: String,
-    val timestamp: Long
-)
-
 class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = RelayRepository(app)
 
-    private val _shortId = MutableStateFlow("…")
-    val shortId: StateFlow<String> = _shortId
+    val shortId = MutableStateFlow("…")
+    val qrBitmap = MutableStateFlow<Bitmap?>(null)
+    val peerCount = MutableStateFlow(0)
+    val batteryLevel = MutableStateFlow(100)
+    val batteryMode = MutableStateFlow("FULL")
+
+    val contacts: StateFlow<List<UiContact>> = repo.observeContacts()
+        .map { list -> list.map { it.toUiContact() } }
+        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     private val _messages = MutableStateFlow<List<UiMessage>>(emptyList())
-    val messages: StateFlow<List<UiMessage>> = _messages
 
-    private val _peers = MutableStateFlow<List<String>>(emptyList())
-    val peers: StateFlow<List<String>> = _peers
+    fun messagesForContact(contactId: String): Flow<List<UiMessage>> {
+        return repo.observeConversation(contactId).map { entities ->
+            entities.map { it.toUiMessage() }
+        }
+    }
 
-    private val _batteryLevel = MutableStateFlow(100)
-    val batteryLevel: StateFlow<Int> = _batteryLevel
-    // Écoute les broadcasts du MeshService
+    fun getContact(contactId: String): Flow<RelayContact?> {
+        return repo.observeContacts().map { list ->
+            list.find { it.shortId == contactId }
+        }
+    }
+
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            if (intent.action == MeshService.ACTION_MESSAGE_RECEIVED) {
-                val sender = intent.getStringExtra(MeshService.EXTRA_SENDER_ID) ?: return
-                val text = intent.getStringExtra(MeshService.EXTRA_PLAINTEXT) ?: return
-                addIncomingMessage(sender, text)
+            when (intent.action) {
+                MeshService.ACTION_MESSAGE_RECEIVED -> {
+                    // Room Flow se met à jour automatiquement
+                }
+                MeshService.ACTION_PEER_COUNT_CHANGED -> {
+                    peerCount.value = intent.getIntExtra("count", 0)
+                }
+                MeshService.ACTION_BATTERY_CHANGED -> {
+                    batteryLevel.value = intent.getIntExtra("level", 100)
+                    batteryMode.value = intent.getStringExtra("mode") ?: "FULL"
+                }
             }
         }
     }
 
     init {
         viewModelScope.launch {
-            _shortId.value = repo.getShortId()
+            val identity = repo.getOrCreateIdentity()
+            val id = repo.getShortId()
+            shortId.value = id
+
+            // Génère le QR code
+            val payload = QrKeyExchange.generatePayload(identity, id)
+            qrBitmap.value = QrKeyExchange.generateBitmap(payload)
         }
 
-        // Écoute les contacts découverts
-        viewModelScope.launch {
-            repo.observeContacts().collect { contacts ->
-                _peers.value = contacts.map { it.shortId }
-            }
+        val filter = IntentFilter().apply {
+            addAction(MeshService.ACTION_MESSAGE_RECEIVED)
+            addAction(MeshService.ACTION_PEER_COUNT_CHANGED)
+            addAction(MeshService.ACTION_BATTERY_CHANGED)
         }
-
-        viewModelScope.launch {
-            // Écoute les updates batterie du service via broadcast
-            // Sprint 6 : on utilisera un Flow partagé
-        }
-
-        // Enregistre le receiver
-        app.registerReceiver(
-            receiver,
-            IntentFilter(MeshService.ACTION_MESSAGE_RECEIVED),
-            Context.RECEIVER_NOT_EXPORTED
-        )
+        app.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
     }
 
     fun sendMessage(recipientId: String, text: String) {
-        if (text.isBlank() || recipientId.isBlank()) return
-
-        // Envoie via le service
+        if (text.isBlank()) return
         val intent = Intent(getApplication(), MeshService::class.java).apply {
             action = MeshService.ACTION_SEND
             putExtra(MeshService.EXTRA_RECIPIENT_ID, recipientId)
             putExtra(MeshService.EXTRA_MESSAGE, text)
         }
         getApplication<Application>().startService(intent)
-
-        // Ajoute immédiatement en UI (optimistic update)
-        _messages.value = _messages.value + UiMessage(
-            id = System.currentTimeMillis().toString(),
-            text = text,
-            direction = "OUT",
-            senderOrRecipient = recipientId,
-            trustLevel = "ORANGE",
-            timestamp = System.currentTimeMillis()
-        )
     }
 
-    private fun addIncomingMessage(sender: String, text: String) {
-        _messages.value = _messages.value + UiMessage(
-            id = System.currentTimeMillis().toString(),
-            text = text,
-            direction = "IN",
-            senderOrRecipient = sender,
-            trustLevel = "YELLOW",
-            timestamp = System.currentTimeMillis()
-        )
+    /**
+     * Ajoute un contact au niveau GREEN après scan QR réussi.
+     */
+    fun addGreenContact(qrContact: QrKeyExchange.QrContact) {
+        viewModelScope.launch {
+            val existing = repo.getContact(qrContact.shortId)
+            val contact = existing?.copy(
+                publicKey = qrContact.publicKey,
+                trustLevel = TrustLevel.GREEN
+            ) ?: RelayContact(
+                shortId = qrContact.shortId,
+                publicKey = qrContact.publicKey,
+                trustLevel = TrustLevel.GREEN
+            )
+            repo.saveContact(contact)
+        }
     }
+
+    // Conversions UI
+    private fun RelayContact.toUiContact() = UiContact(
+        shortId = shortId,
+        displayName = displayName,
+        trustLevel = trustLevel.name,
+        lastMessage = null,
+        isOnline = false
+    )
+
+    private fun MessageEntity.toUiMessage() = UiMessage(
+        id = id,
+        text = plaintext,
+        direction = direction,
+        senderOrRecipient = contactShortId,
+        trustLevel = trustLevelAtSend,
+        timestamp = timestamp
+    )
 
     override fun onCleared() {
         super.onCleared()

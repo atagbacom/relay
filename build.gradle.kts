@@ -46,5 +46,15 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
 
+    // Navigation Compose
+    implementation("androidx.navigation:navigation-compose:2.9.0")
 
+    // QR Code — génération
+    implementation("com.google.zxing:core:3.5.3")
+
+    // QR Code — scan caméra
+    implementation("androidx.camera:camera-camera2:1.4.2")
+    implementation("androidx.camera:camera-lifecycle:1.4.2")
+    implementation("androidx.camera:camera-view:1.4.2")
+    implementation("com.google.mlkit:barcode-scanning:17.3.0")
 }
