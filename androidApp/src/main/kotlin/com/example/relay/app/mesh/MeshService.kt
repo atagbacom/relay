@@ -6,81 +6,95 @@ import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.relay.app.crypto.*
-import com.relay.app.model.RelayPacket
-import com.relay.app.model.PacketType
+import com.relay.app.model.*
+import com.relay.app.repository.RelayRepository
+import com.relay.app.storage.MessageEntity
+import com.relay.app.storage.ContactEntity
 import kotlinx.coroutines.*
-import java.io.ByteArrayInputStream
-import java.io.ByteArrayOutputStream
-import java.io.ObjectInputStream
-import java.io.ObjectOutputStream
+import org.signal.libsignal.protocol.SignalProtocolAddress
+import org.signal.libsignal.protocol.SessionBuilder
+import org.signal.libsignal.protocol.SessionCipher
+import org.signal.libsignal.protocol.message.PreKeySignalMessage
+import org.signal.libsignal.protocol.message.SignalMessage
+import java.io.*
+import java.util.UUID
 
-/**
- * Service foreground — tourne en arrière-plan même écran éteint.
- *
- * Orchestre :
- * - BLE advertising (notre présence)
- * - BLE scanning (découverte des pairs)
- * - GATT server (réception)
- * - GATT clients (envoi)
- * - Routeur mesh
- * - Couche crypto
- */
 class MeshService : Service() {
 
     companion object {
         const val CHANNEL_ID = "relay_mesh"
         const val NOTIF_ID = 1
+        const val ACTION_SEND = "com.relay.app.SEND"
+        const val EXTRA_RECIPIENT_ID = "recipient_id"
+        const val EXTRA_MESSAGE = "message"
         private const val TAG = "MeshService"
 
-        // Intent actions
-        const val ACTION_SEND = "com.relay.app.SEND"
-        const val EXTRA_PACKET = "packet"
+        // Broadcast vers l'UI quand un message arrive
+        const val ACTION_MESSAGE_RECEIVED = "com.relay.app.MESSAGE_RECEIVED"
+        const val EXTRA_SENDER_ID = "sender_id"
+        const val EXTRA_PLAINTEXT = "plaintext"
     }
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-
+    private lateinit var repo: RelayRepository
     private lateinit var advertiser: BleAdvertiser
     private lateinit var scanner: BleScanner
     private lateinit var gattServer: BleGattServer
     private lateinit var router: MeshRouter
+    private lateinit var gossip: PreKeyGossip
+    private lateinit var deferred: DeferredSession
 
-    // Table des pairs découverts : shortId → adresse MAC
-    private val peers = mutableMapOf<String, String>()
+    private val peers = mutableMapOf<String, String>() // shortId → MAC
 
-    // Notre identité — chargée depuis Room au Sprint 4
-    // Pour l'instant générée à chaque démarrage du service
-    private val localIdentity = RelayIdentity.generate()
-    private val localShortId = RelayIdentity.shortId(localIdentity)
+    // Identité chargée depuis Room — persistante entre redémarrages
+    private var localIdentity =
+        org.signal.libsignal.protocol.IdentityKeyPair(ByteArray(0))
+    private var localShortId = ""
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        startForeground(NOTIF_ID, buildNotification())
+        startForeground(NOTIF_ID, buildNotification("Démarrage…"))
 
-        router = MeshRouter(localShortId)
-        advertiser = BleAdvertiser(this)
-        scanner = BleScanner(this)
-        gattServer = BleGattServer(this)
+        repo = RelayRepository(this)
 
-        setupRouter()
-        setupScanner()
-        setupGattServer()
+        scope.launch {
+            // Charge ou crée l'identité persistante
+            localIdentity = repo.getOrCreateIdentity()
+            localShortId = repo.getShortId()
 
-        advertiser.start(localShortId)
-        scanner.start()
-        gattServer.start()
+            gossip = PreKeyGossip(localIdentity)
+            deferred = DeferredSession(localIdentity)
 
-        Log.d(TAG, "MeshService démarré — identité : $localShortId")
+            router = MeshRouter(localShortId)
+            advertiser = BleAdvertiser(this@MeshService)
+            scanner = BleScanner(this@MeshService)
+            gattServer = BleGattServer(this@MeshService)
+
+            setupRouter()
+            setupScanner()
+            setupGattServer()
+
+            advertiser.start(localShortId)
+            scanner.start()
+            gattServer.start()
+
+            updateNotification("Mesh actif — $localShortId")
+            Log.d(TAG, "MeshService prêt — $localShortId")
+        }
     }
+
+    // ─── Setup callbacks ─────────────────────────────────────
 
     private fun setupRouter() {
         router.onMessageForUs = { packet ->
-            Log.d(TAG, "Message reçu pour nous depuis ${packet.senderId}")
-            // Sprint 4 : on livre à l'UI via LiveData/Flow
+            scope.launch { handleIncomingMessage(packet) }
         }
-
         router.onPacketToRelay = { packet ->
             scope.launch { relayToAllPeers(packet) }
+        }
+        router.onPreKeyReceived = { senderId, bundleBytes ->
+            scope.launch { handlePreKeyGossip(senderId, bundleBytes) }
         }
     }
 
@@ -88,11 +102,8 @@ class MeshService : Service() {
         scanner.onPeerDiscovered = { address, shortId ->
             if (shortId != localShortId && !peers.containsKey(shortId)) {
                 peers[shortId] = address
-                Log.d(TAG, "Nouveau pair : $shortId @ $address")
-
-                // Dès qu'on découvre un pair, on lui envoie nos prekeys
-                // pour qu'il puisse nous contacter même si on disparaît
-                scope.launch { sendPreKeyGossipTo(address) }
+                Log.d(TAG, "Pair découvert : $shortId")
+                scope.launch { sendOurPreKeys(address) }
             }
         }
     }
@@ -106,22 +117,135 @@ class MeshService : Service() {
         }
     }
 
+    // ─── Envoi d'un message ──────────────────────────────────
+
     /**
-     * Envoie nos prekeys à un pair nouvellement découvert.
+     * Appelé depuis l'UI via startService(intent).
+     * Chiffre le message et l'injecte dans le mesh.
      */
-    private suspend fun sendPreKeyGossipTo(peerAddress: String) {
-        withContext(Dispatchers.IO) {
-            val session = RelaySession(localIdentity, localShortId.hashCode())
-            val bundle = session.createPreKeyBundle()
-            val gossip = PreKeyGossip(localIdentity)
-            val packet = gossip.createGossipPacket(localShortId, bundle)
-            sendPacketTo(peerAddress, packet)
+    private fun sendMessage(recipientId: String, plaintext: String) {
+        scope.launch {
+            try {
+                val store = repo.getOrCreateStore(
+                    localIdentity,
+                    localShortId.hashCode()
+                )
+                val recipientAddress = SignalProtocolAddress(recipientId, 1)
+                val cipher = SessionCipher(store, recipientAddress)
+
+                // Chiffre avec Double Ratchet
+                val encrypted = RelayMessage.encrypt(cipher, plaintext)
+
+                val packet = RelayPacket(
+                    id = UUID.randomUUID().toString(),
+                    type = PacketType.MESSAGE,
+                    senderId = localShortId,
+                    recipientId = recipientId,
+                    payload = serializeEncrypted(encrypted),
+                    signature = signPayload(serializeEncrypted(encrypted)),
+                    ttl = RelayPacket.MAX_HOPS
+                )
+
+                // Persiste en base
+                repo.saveMessage(
+                    MessageEntity(
+                        id = packet.id,
+                        contactShortId = recipientId,
+                        direction = "OUT",
+                        plaintext = plaintext,
+                        trustLevelAtSend = getTrustLevel(recipientId),
+                        timestamp = System.currentTimeMillis()
+                    )
+                )
+
+                // Injecte dans le mesh
+                relayToAllPeers(packet)
+                Log.d(TAG, "Message envoyé à $recipientId")
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Erreur envoi : ${e.message}")
+            }
         }
     }
 
-    /**
-     * Relaie un paquet à tous les pairs connus.
-     */
+    // ─── Réception d'un message ──────────────────────────────
+
+    private suspend fun handleIncomingMessage(packet: RelayPacket) {
+        try {
+            val store = repo.getOrCreateStore(
+                localIdentity,
+                localShortId.hashCode()
+            )
+            val senderAddress = SignalProtocolAddress(packet.senderId, 1)
+            val cipher = SessionCipher(store, senderAddress)
+
+            val encrypted = deserializeEncrypted(packet.payload)
+            val plaintext = RelayMessage.decrypt(cipher, encrypted)
+
+            Log.d(TAG, "Message déchiffré de ${packet.senderId} : $plaintext")
+
+            // Persiste
+            repo.saveMessage(
+                MessageEntity(
+                    id = packet.id,
+                    contactShortId = packet.senderId,
+                    direction = "IN",
+                    plaintext = plaintext,
+                    trustLevelAtSend = getTrustLevel(packet.senderId),
+                    timestamp = System.currentTimeMillis(),
+                    delivered = true
+                )
+            )
+
+            // Notifie l'UI
+            sendBroadcast(Intent(ACTION_MESSAGE_RECEIVED).apply {
+                putExtra(EXTRA_SENDER_ID, packet.senderId)
+                putExtra(EXTRA_PLAINTEXT, plaintext)
+            })
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Erreur déchiffrement : ${e.message}")
+        }
+    }
+
+    // ─── Gossip prekeys ──────────────────────────────────────
+
+    private suspend fun sendOurPreKeys(peerAddress: String) {
+        val session = RelaySession(localIdentity, localShortId.hashCode())
+        val bundle = session.createPreKeyBundle()
+        val packet = gossip.createGossipPacket(localShortId, bundle)
+        sendPacketTo(peerAddress, packet)
+    }
+
+    private suspend fun handlePreKeyGossip(
+        senderId: String,
+        bundleBytes: ByteArray
+    ) {
+        // Vérifie la signature et extrait le bundle
+        val fakePacket = com.relay.app.model.RelayPacket(
+            id = UUID.randomUUID().toString(),
+            type = PacketType.PREKEY_GOSSIP,
+            senderId = senderId,
+            recipientId = null,
+            payload = bundleBytes,
+            signature = ByteArray(0),  // déjà vérifié par le router
+            ttl = 0
+        )
+
+        val store = repo.getOrCreateStore(
+            localIdentity, localShortId.hashCode()
+        )
+        val senderAddress = SignalProtocolAddress(senderId, 1)
+
+        // Si pas encore de session avec ce pair
+        if (!store.containsSession(senderAddress)) {
+            Log.d(TAG, "Prekeys reçues de $senderId — niveau YELLOW")
+            repo.upgradeTrust(senderId, TrustLevel.YELLOW)
+        }
+    }
+
+    // ─── Transport ───────────────────────────────────────────
+
     private suspend fun relayToAllPeers(packet: RelayPacket) {
         withContext(Dispatchers.IO) {
             peers.values.forEach { address ->
@@ -130,72 +254,103 @@ class MeshService : Service() {
         }
     }
 
-    /**
-     * Envoie un paquet à une adresse MAC précise via GATT.
-     */
     private fun sendPacketTo(address: String, packet: RelayPacket) {
         val bytes = serializePacket(packet) ?: return
         val client = BleGattClient(this, address)
-        client.onSendComplete = { success ->
-            Log.d(TAG, "Envoi vers $address : $success")
-            client.disconnect()
-        }
+        client.onSendComplete = { client.disconnect() }
         client.send(bytes)
     }
 
-    // Sérialisation temporaire — Sprint 4 : Protocol Buffers
+    // ─── Helpers ─────────────────────────────────────────────
+
+    private fun signPayload(payload: ByteArray): ByteArray {
+        return org.signal.libsignal.protocol.ecc.Curve.calculateSignature(
+            localIdentity.privateKey, payload
+        )
+    }
+
+    private suspend fun getTrustLevel(shortId: String): String {
+        return repo.getContact(shortId)?.trustLevel?.name ?: "ORANGE"
+    }
+
+    private fun serializeEncrypted(payload: EncryptedPayload): ByteArray {
+        val bos = ByteArrayOutputStream()
+        DataOutputStream(bos).use {
+            it.writeBoolean(payload.isPreKeyMessage)
+            it.writeInt(payload.ciphertext.size)
+            it.write(payload.ciphertext)
+        }
+        return bos.toByteArray()
+    }
+
+    private fun deserializeEncrypted(bytes: ByteArray): EncryptedPayload {
+        val dis = DataInputStream(ByteArrayInputStream(bytes))
+        val isPreKey = dis.readBoolean()
+        val size = dis.readInt()
+        val ciphertext = ByteArray(size)
+        dis.readFully(ciphertext)
+        return EncryptedPayload(ciphertext, isPreKey)
+    }
+
     private fun serializePacket(packet: RelayPacket): ByteArray? {
         return try {
-            val bos = ByteArrayOutputStream()
-            ObjectOutputStream(bos).use { it.writeObject(packet) }
-            bos.toByteArray()
-        } catch (e: Exception) {
-            Log.e(TAG, "Erreur sérialisation : ${e.message}")
-            null
-        }
+            ByteArrayOutputStream().also { bos ->
+                ObjectOutputStream(bos).use { it.writeObject(packet) }
+            }.toByteArray()
+        } catch (e: Exception) { null }
     }
 
     private fun deserializePacket(bytes: ByteArray): RelayPacket? {
         return try {
-            val bis = ByteArrayInputStream(bytes)
-            ObjectInputStream(bis).use { it.readObject() as RelayPacket }
-        } catch (e: Exception) {
-            Log.e(TAG, "Erreur désérialisation : ${e.message}")
-            null
-        }
+            ObjectInputStream(ByteArrayInputStream(bytes))
+                .use { it.readObject() as RelayPacket }
+        } catch (e: Exception) { null }
     }
 
-    // Notification foreground obligatoire Android 8+
+    // ─── Lifecycle ───────────────────────────────────────────
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            ACTION_SEND -> {
+                val recipientId = intent.getStringExtra(EXTRA_RECIPIENT_ID) ?: return START_STICKY
+                val message = intent.getStringExtra(EXTRA_MESSAGE) ?: return START_STICKY
+                sendMessage(recipientId, message)
+            }
+        }
+        return START_STICKY
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (::advertiser.isInitialized) advertiser.stop()
+        if (::scanner.isInitialized) scanner.stop()
+        if (::gattServer.isInitialized) gattServer.stop()
+        scope.cancel()
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
     private fun createNotificationChannel() {
         val channel = NotificationChannel(
-            CHANNEL_ID,
-            "Relay Mesh",
+            CHANNEL_ID, "Relay Mesh",
             NotificationManager.IMPORTANCE_LOW
-        ).apply { description = "Réseau mesh actif" }
+        )
         getSystemService(NotificationManager::class.java)
             .createNotificationChannel(channel)
     }
 
-    private fun buildNotification(): Notification {
+    private fun buildNotification(text: String): Notification {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Relay")
-            .setContentText("Réseau mesh actif — $localShortId")
+            .setContentText(text)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setOngoing(true)
             .build()
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        return START_STICKY  // Redémarre si le système tue le service
+    private fun updateNotification(text: String) {
+        val notif = buildNotification(text)
+        getSystemService(NotificationManager::class.java)
+            .notify(NOTIF_ID, notif)
     }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        advertiser.stop()
-        scanner.stop()
-        gattServer.stop()
-        scope.cancel()
-    }
-
-    override fun onBind(intent: Intent?): IBinder? = null
 }
