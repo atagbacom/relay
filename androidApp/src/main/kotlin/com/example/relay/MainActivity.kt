@@ -5,13 +5,18 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.util.Log
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.core.content.ContextCompat
 import com.relay.app.mesh.MeshService
+import com.relay.app.ui.MainScreen
+import com.relay.app.ui.MainViewModel
 
 class MainActivity : ComponentActivity() {
+
+    private val viewModel: MainViewModel by viewModels()
 
     private val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         arrayOf(
@@ -27,15 +32,15 @@ class MainActivity : ComponentActivity() {
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
-        if (results.values.all { it }) {
-            startMeshService()
-        } else {
-            Log.e("MainActivity", "Permissions refusées")
-        }
+        if (results.values.all { it }) startMeshService()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        setContent {
+            MainScreen(viewModel)
+        }
 
         if (permissions.all {
             ContextCompat.checkSelfPermission(this, it) ==
@@ -48,8 +53,6 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startMeshService() {
-        val intent = Intent(this, MeshService::class.java)
-        startForegroundService(intent)
-        Log.d("MainActivity", "MeshService lancé")
+        startForegroundService(Intent(this, MeshService::class.java))
     }
 }
