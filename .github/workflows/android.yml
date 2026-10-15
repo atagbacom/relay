@@ -1,0 +1,49 @@
+name: Android
+
+# Toute compilation se fait ici, jamais sur un poste de développement.
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: APK de débogage et tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Java 21 (JVM du démon Gradle)
+        uses: actions/setup-java@v4
+        with:
+          distribution: corretto
+          java-version: "21"
+
+      - name: Gradle avec cache
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Compiler l'APK de débogage
+        run: ./gradlew :androidApp:assembleDebug --stacktrace
+
+      - name: Tests unitaires
+        run: ./gradlew :androidApp:testDebugUnitTest --stacktrace
+
+      - name: Rapport des tests
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rapport-tests
+          path: androidApp/build/reports/tests/
+          if-no-files-found: ignore
+
+      - name: APK à installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: relay-debug-apk
+          path: androidApp/build/outputs/apk/debug/*.apk
