@@ -33,6 +33,10 @@ class MeshService : Service() {
         const val ACTION_MESSAGE_RECEIVED = "com.relay.app.MESSAGE_RECEIVED"
         const val EXTRA_SENDER_ID = "sender_id"
         const val EXTRA_PLAINTEXT = "plaintext"
+
+        // Broadcasts d'état vers l'UI
+        const val ACTION_PEER_COUNT_CHANGED = "com.relay.app.PEER_COUNT_CHANGED"
+        const val ACTION_BATTERY_CHANGED = "com.relay.app.BATTERY_CHANGED"
     }
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -74,6 +78,15 @@ class MeshService : Service() {
             nodeTracker = NodeTracker()
             batteryMonitor = BatteryMonitor(this@MeshService)
             batteryMonitor.start()
+            scope.launch {
+                batteryMonitor.mode.collect { mode ->
+                    sendBroadcast(Intent(ACTION_BATTERY_CHANGED).apply {
+                        setPackage(packageName)
+                        putExtra("level", batteryMonitor.level.value)
+                        putExtra("mode", mode.name)
+                    })
+                }
+            }
 
 
             router = MeshRouter(localShortId, nodeTracker, batteryMonitor)
@@ -96,6 +109,7 @@ class MeshService : Service() {
                 while (isActive) {
                     delay(600_000)
                     nodeTracker.prune()
+                    broadcastPeerCount()
                 }
             }
         }
@@ -105,7 +119,7 @@ class MeshService : Service() {
 
     private fun setupRouter() {
         router.onMessageForUs = { packet ->
-            scope.launch { handleIncomingPacket(packet) }
+            scope.launch { handleIncomingMessage(packet) }
         }
 
         // Maintenant onPacketToRelay reçoit une liste d'adresses cibles
@@ -134,6 +148,7 @@ class MeshService : Service() {
                 val isNew = !nodeTracker.getActiveNodes()
                     .any { it.shortId == shortId }
                 nodeTracker.seen(shortId, address, rssi)
+                peers[shortId] = address
 
                 if (isNew) {
                     Log.d(TAG, "Nouveau pair : $shortId")
@@ -142,6 +157,7 @@ class MeshService : Service() {
                     updateNotification(
                         "Mesh actif — ${nodeTracker.activeCount()} pairs"
                     )
+                    broadcastPeerCount()
                 }
             }
         }
@@ -238,6 +254,7 @@ class MeshService : Service() {
 
             // Notifie l'UI
             sendBroadcast(Intent(ACTION_MESSAGE_RECEIVED).apply {
+                setPackage(packageName)
                 putExtra(EXTRA_SENDER_ID, packet.senderId)
                 putExtra(EXTRA_PLAINTEXT, plaintext)
             })
@@ -322,6 +339,13 @@ class MeshService : Service() {
     }
 
     // ─── Helpers ─────────────────────────────────────────────
+
+    private fun broadcastPeerCount() {
+        sendBroadcast(Intent(ACTION_PEER_COUNT_CHANGED).apply {
+            setPackage(packageName)
+            putExtra("count", nodeTracker.activeCount())
+        })
+    }
 
     private fun signPayload(payload: ByteArray): ByteArray {
         return org.signal.libsignal.protocol.ecc.Curve.calculateSignature(

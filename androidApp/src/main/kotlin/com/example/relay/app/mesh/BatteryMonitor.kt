@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
 import android.util.Log
+import com.relay.app.model.RelayPacket
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -84,7 +85,7 @@ class BatteryMonitor(private val context: Context) {
     /**
      * En mode critique, on ne relaie que les messages prioritaires.
      */
-    fun shouldRelay(packet: com.relay.app.model.RelayPacket): Boolean {
+    fun shouldRelay(packet: RelayPacket): Boolean {
         return when (_mode.value) {
             BatteryMode.FULL     -> true
             BatteryMode.LOW      -> true

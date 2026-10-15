@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Bitmap
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.relay.app.crypto.QrKeyExchange
@@ -79,7 +80,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             addAction(MeshService.ACTION_PEER_COUNT_CHANGED)
             addAction(MeshService.ACTION_BATTERY_CHANGED)
         }
-        app.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        ContextCompat.registerReceiver(app, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
     }
 
     fun sendMessage(recipientId: String, text: String) {
