@@ -391,17 +391,18 @@ class MeshService : Service() {
 
     private fun serializePacket(packet: RelayPacket): ByteArray? {
         return try {
-            ByteArrayOutputStream().also { bos ->
-                ObjectOutputStream(bos).use { it.writeObject(packet) }
-            }.toByteArray()
-        } catch (e: Exception) { null }
+            PacketCodec.encode(packet)
+        } catch (e: IllegalArgumentException) {
+            Log.e(TAG, "Paquet non encodable : ${e.message}")
+            null
+        }
     }
 
+    /** Octets reçus d'un appareil quelconque : décodage strict, jamais de désérialisation Java. */
     private fun deserializePacket(bytes: ByteArray): RelayPacket? {
-        return try {
-            ObjectInputStream(ByteArrayInputStream(bytes))
-                .use { it.readObject() as RelayPacket }
-        } catch (e: Exception) { null }
+        return PacketCodec.decode(bytes).also {
+            if (it == null) Log.w(TAG, "Paquet rejeté : format invalide (${bytes.size} octets)")
+        }
     }
 
     // ─── Lifecycle ───────────────────────────────────────────

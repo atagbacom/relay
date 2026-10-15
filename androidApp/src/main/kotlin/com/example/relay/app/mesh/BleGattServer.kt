@@ -3,6 +3,7 @@ package com.relay.app.mesh
 import android.bluetooth.*
 import android.content.Context
 import android.util.Log
+import com.relay.app.model.PacketCodec
 import java.util.UUID
 
 /**
@@ -61,16 +62,24 @@ class BleGattServer(private val context: Context) {
         ) {
             if (characteristic.uuid != RELAY_PACKET_CHAR_UUID) return
 
-            // Accumule les fragments
+            // Accumule les fragments jusqu'à la taille annoncée par l'en-tête
             val existing = fragmentBuffers[device.address] ?: ByteArray(0)
             val combined = existing + value
             fragmentBuffers[device.address] = combined
 
-            // Détecte la fin du paquet (marqueur 0xFF 0xFF en fin)
-            if (value.size < MTU_SIZE) {
-                // Dernier fragment — paquet complet
-                onPacketReceived?.invoke(combined)
-                fragmentBuffers.remove(device.address)
+            if (combined.size >= PacketCodec.TAILLE_EN_TETE) {
+                val attendue = PacketCodec.tailleAnnoncee(combined)
+                when {
+                    // En-tête invalide ou paquet plus long qu'annoncé : on jette
+                    attendue == null || combined.size > attendue -> {
+                        Log.w(TAG, "Fragments rejetés de ${device.address}")
+                        fragmentBuffers.remove(device.address)
+                    }
+                    combined.size == attendue -> {
+                        onPacketReceived?.invoke(combined)
+                        fragmentBuffers.remove(device.address)
+                    }
+                }
             }
 
             if (responseNeeded) {
