@@ -14,9 +14,11 @@ junit = "4.13.2"
 kotlin = "2.4.0"
 ksp = "2.3.12"
 room = "2.8.5"
+desugar = "2.1.5"
 material3 = "1.11.0-alpha07"
 
 [libraries]
+desugar-jdk-libs = { module = "com.android.tools:desugar_jdk_libs", version.ref = "desugar" }
 room-runtime = { module = "androidx.room:room-runtime", version.ref = "room" }
 room-ktx = { module = "androidx.room:room-ktx", version.ref = "room" }
 room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }

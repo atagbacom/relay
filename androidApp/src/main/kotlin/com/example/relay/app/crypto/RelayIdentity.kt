@@ -1,7 +1,6 @@
 package com.relay.app.crypto
 
 import org.signal.libsignal.protocol.IdentityKeyPair
-import org.signal.libsignal.protocol.util.KeyHelper
 
 class RelayIdentity {
 
@@ -14,7 +13,7 @@ class RelayIdentity {
          * - clé privée Ed25519 (ne quitte jamais l'appareil)
          */
         fun generate(): IdentityKeyPair {
-            return KeyHelper.generateIdentityKeyPair()
+            return IdentityKeyPair.generate()
         }
 
         /**

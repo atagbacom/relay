@@ -20,6 +20,8 @@ dependencies {
     implementation(libs.compose.uiToolingPreview)
     debugImplementation(libs.compose.uiTooling)
 
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
+
     // Signal Protocol — crypto
     implementation("org.signal:libsignal-android:0.67.0")
     implementation("org.signal:libsignal-client:0.67.0")
@@ -77,6 +79,8 @@ android {
         }
     }
     compileOptions {
+        // exigé par libsignal-android (API Java récentes sur Android 8)
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
