@@ -63,7 +63,7 @@ class CryptoTest {
     }
 
     @Test
-    fun `double ratchet : clé différente à chaque message`() {
+    fun `double ratchet, clé différente à chaque message`() {
         val aliceIdentity = RelayIdentity.generate()
         val aliceSession = RelaySession(aliceIdentity, 1)
         val bobIdentity = RelayIdentity.generate()

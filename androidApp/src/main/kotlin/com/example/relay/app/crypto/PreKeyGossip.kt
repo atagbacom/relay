@@ -5,6 +5,7 @@ import com.relay.app.model.RelayPacket
 import org.signal.libsignal.protocol.IdentityKeyPair
 import org.signal.libsignal.protocol.ecc.Curve
 import org.signal.libsignal.protocol.state.PreKeyBundle
+import java.util.Base64
 import java.util.UUID
 
 /**
@@ -84,18 +85,18 @@ class PreKeyGossip(private val localIdentity: IdentityKeyPair) {
             bundle.registrationId.toString(),
             bundle.deviceId.toString(),
             bundle.preKeyId.toString(),
-            bundle.preKey?.serialize()?.let { android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP) } ?: "",
+            bundle.preKey?.serialize()?.let { Base64.getEncoder().encodeToString(it) } ?: "",
             bundle.signedPreKeyId.toString(),
-            bundle.signedPreKey.serialize().let { android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP) },
-            android.util.Base64.encodeToString(bundle.signedPreKeySignature, android.util.Base64.NO_WRAP),
-            android.util.Base64.encodeToString(bundle.identityKey.serialize(), android.util.Base64.NO_WRAP)
+            bundle.signedPreKey.serialize().let { Base64.getEncoder().encodeToString(it) },
+            Base64.getEncoder().encodeToString(bundle.signedPreKeySignature),
+            Base64.getEncoder().encodeToString(bundle.identityKey.serialize())
         )
         return parts.joinToString("|").toByteArray(Charsets.UTF_8)
     }
 
     private fun deserializeBundle(bytes: ByteArray): PreKeyBundle {
         val parts = String(bytes, Charsets.UTF_8).split("|")
-        val decode = { s: String -> android.util.Base64.decode(s, android.util.Base64.NO_WRAP) }
+        val decode = { s: String -> Base64.getDecoder().decode(s) }
 
         return PreKeyBundle(
             parts[0].toInt(),
