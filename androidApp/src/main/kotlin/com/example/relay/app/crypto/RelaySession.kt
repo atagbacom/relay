@@ -4,6 +4,8 @@ import org.signal.libsignal.protocol.*
 import org.signal.libsignal.protocol.ecc.Curve
 import org.signal.libsignal.protocol.state.impl.InMemorySignalProtocolStore
 import org.signal.libsignal.protocol.state.PreKeyBundle
+import org.signal.libsignal.protocol.state.PreKeyRecord
+import org.signal.libsignal.protocol.state.SignedPreKeyRecord
 
 class RelaySession(
     private val localIdentity: IdentityKeyPair,
@@ -30,12 +32,25 @@ class RelaySession(
             signedPreKeyPair.publicKey.serialize()
         )
 
+        // Les parties privées restent chez nous : sans elles, le premier
+        // message (PreKeySignalMessage) reçu ne peut pas être déchiffré.
+        store.storePreKey(PRE_KEY_ID, PreKeyRecord(PRE_KEY_ID, preKeyPair))
+        store.storeSignedPreKey(
+            SIGNED_PRE_KEY_ID,
+            SignedPreKeyRecord(
+                SIGNED_PRE_KEY_ID,
+                System.currentTimeMillis(),
+                signedPreKeyPair,
+                signedPreKeySignature
+            )
+        )
+
         return PreKeyBundle(
             localRegistrationId,
             1,           // deviceId
-            1,           // preKeyId
+            PRE_KEY_ID,
             preKeyPair.publicKey,
-            1,           // signedPreKeyId
+            SIGNED_PRE_KEY_ID,
             signedPreKeyPair.publicKey,
             signedPreKeySignature,
             localIdentity.publicKey
@@ -60,5 +75,10 @@ class RelaySession(
      */
     fun getSessionCipher(address: SignalProtocolAddress): SessionCipher {
         return SessionCipher(store, address)
+    }
+
+    private companion object {
+        const val PRE_KEY_ID = 1
+        const val SIGNED_PRE_KEY_ID = 1
     }
 }
