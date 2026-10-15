@@ -3,7 +3,7 @@ name: Android
 # Toute compilation se fait ici, jamais sur un poste de développement.
 on:
   push:
-    branches: [main]
+    branches: ["**"]
   pull_request:
   workflow_dispatch:
 
