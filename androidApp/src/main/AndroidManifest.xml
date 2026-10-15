@@ -1,6 +1,40 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Bluetooth : Android 12 et plus -->
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
+    <!-- Bluetooth : Android 8 à 11 (minSdk 26) -->
+    <uses-permission android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN"
+        android:maxSdkVersion="30" />
+
+    <!-- WiFi Direct -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES"
+        android:usesPermissionFlags="neverForLocation" />
+
+    <!-- Réseau local -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+
+    <!-- Service foreground pour le mesh en arrière-plan -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />
+    <uses-feature android:name="android.hardware.wifi.direct" android:required="false" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -9,36 +43,10 @@
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
 
-        <!-- Bluetooth -->
-        <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
-            android:usesPermissionFlags="neverForLocation" />
-        <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
-        <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-
-        <!-- WiFi Direct -->
-        <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-        <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
-        <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-        <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES"
-            android:usesPermissionFlags="neverForLocation" />
-
-        <!-- Réseau local -->
-        <uses-permission android:name="android.permission.INTERNET" />
-        <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-        <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
-
-        <!-- Service foreground pour le mesh en arrière-plan -->
-        <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-        <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
-
-        <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />
-        <uses-feature android:name="android.hardware.wifi.direct" android:required="false" />
-
-        <uses-permission android:name="android.permission.CAMERA" />
-        <uses-feature android:name="android.hardware.camera" android:required="false" />
+        <!-- Noms complets : le code est dans com.relay.app, pas dans le namespace com.example.relay -->
         <activity
             android:exported="true"
-            android:name=".MainActivity">
+            android:name="com.relay.app.MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
@@ -46,7 +54,7 @@
             </intent-filter>
         </activity>
         <service
-            android:name=".mesh.MeshService"
+            android:name="com.relay.app.mesh.MeshService"
             android:foregroundServiceType="connectedDevice"
             android:exported="false" />
     </application>
