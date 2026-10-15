@@ -71,7 +71,11 @@ class PreKeyGossip(private val localIdentity: IdentityKeyPair) {
                 packet.signature
             )
 
-            if (isValid) bundle else null
+            // La clé doit aussi correspondre à l'identifiant annoncé : sinon
+            // n'importe qui pourrait signer son propre bundle au nom d'un autre.
+            val bonExpediteur = RelayIdentity.shortIdOf(bundle.identityKey) == packet.senderId
+
+            if (isValid && bonExpediteur) bundle else null
         } catch (e: Exception) {
             // Signature invalide ou bundle corrompu — on ignore silencieusement
             null

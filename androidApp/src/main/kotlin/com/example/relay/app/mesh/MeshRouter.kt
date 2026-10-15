@@ -25,7 +25,7 @@ class MeshRouter(
     // Callbacks vers MeshService
     var onMessageForUs: ((RelayPacket) -> Unit)? = null
     var onPacketToRelay: ((RelayPacket, List<String>) -> Unit)? = null
-    var onPreKeyReceived: ((String, ByteArray) -> Unit)? = null
+    var onPreKeyReceived: ((RelayPacket) -> Unit)? = null
     var onAckReceived: ((String) -> Unit)? = null
 
     /**
@@ -111,7 +111,7 @@ class MeshRouter(
     private fun handleGossip(packet: RelayPacket) {
         // Met à jour le tracker
         nodeTracker.markPreKeyExchanged(packet.senderId)
-        onPreKeyReceived?.invoke(packet.senderId, packet.payload)
+        onPreKeyReceived?.invoke(packet)
 
         // Relaie le gossip à tous les voisins actifs
         val relays = nodeTracker.getActiveNodes()

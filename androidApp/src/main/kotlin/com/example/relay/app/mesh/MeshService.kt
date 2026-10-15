@@ -58,6 +58,10 @@ class MeshService : Service() {
         org.signal.libsignal.protocol.IdentityKeyPair(ByteArray(0))
     private var localShortId = ""
 
+    // Store Signal unique et persistant : publie nos clés ET déchiffre
+    private lateinit var signalStore: PersistentSignalStore
+    private lateinit var session: RelaySession
+
 
     override fun onCreate() {
         super.onCreate()
@@ -71,6 +75,11 @@ class MeshService : Service() {
             // Charge ou crée l'identité persistante
             localIdentity = repo.getOrCreateIdentity()
             localShortId = repo.getShortId()
+            signalStore = repo.signalStore(
+                localIdentity,
+                RelaySession.registrationIdPour(localShortId)
+            )
+            session = RelaySession(localIdentity, signalStore)
 
             gossip = PreKeyGossip(localIdentity)
             deferred = DeferredSession(localIdentity)
@@ -131,11 +140,8 @@ class MeshService : Service() {
             }
         }
 
-        router.onPreKeyReceived = { senderId, bundleBytes ->
-            scope.launch {
-                repo.upgradeTrust(senderId, TrustLevel.YELLOW)
-                nodeTracker.markPreKeyExchanged(senderId)
-            }
+        router.onPreKeyReceived = { packet ->
+            scope.launch { handlePreKeyGossip(packet) }
         }
 
         router.onAckReceived = { messageId ->
@@ -181,10 +187,7 @@ class MeshService : Service() {
     private fun sendMessage(recipientId: String, plaintext: String) {
         scope.launch {
             try {
-                val store = repo.getOrCreateStore(
-                    localIdentity,
-                    localShortId.hashCode()
-                )
+                val store = signalStore
                 val recipientAddress = SignalProtocolAddress(recipientId, 1)
                 val cipher = SessionCipher(store, recipientAddress)
 
@@ -227,10 +230,7 @@ class MeshService : Service() {
 
     private suspend fun handleIncomingMessage(packet: RelayPacket) {
         try {
-            val store = repo.getOrCreateStore(
-                localIdentity,
-                localShortId.hashCode()
-            )
+            val store = signalStore
             val senderAddress = SignalProtocolAddress(packet.senderId, 1)
             val cipher = SessionCipher(store, senderAddress)
 
@@ -288,36 +288,49 @@ class MeshService : Service() {
     // ─── Gossip prekeys ──────────────────────────────────────
 
     private suspend fun sendOurPreKeys(peerAddress: String) {
-        val session = RelaySession(localIdentity, localShortId.hashCode())
-        val bundle = session.createPreKeyBundle()
+        val bundle = session.createPreKeyBundle(avecCleUnique = false)
         val packet = gossip.createGossipPacket(localShortId, bundle)
         sendPacketTo(peerAddress, packet)
     }
 
-    private suspend fun handlePreKeyGossip(
-        senderId: String,
-        bundleBytes: ByteArray
-    ) {
-        // Vérifie la signature et extrait le bundle
-        val fakePacket = com.relay.app.model.RelayPacket(
-            id = UUID.randomUUID().toString(),
-            type = PacketType.PREKEY_GOSSIP,
-            senderId = senderId,
-            recipientId = null,
-            payload = bundleBytes,
-            signature = ByteArray(0),  // déjà vérifié par le router
-            ttl = 0
-        )
+    /**
+     * Clés reçues d'un pair. On vérifie la signature et que la clé correspond
+     * à l'identifiant annoncé, puis on ouvre une session : nos messages vers
+     * lui pourront partir même s'il n'est plus à portée.
+     */
+    private suspend fun handlePreKeyGossip(packet: RelayPacket) {
+        val bundle = gossip.verifyAndExtract(packet)
+        if (bundle == null) {
+            Log.w(TAG, "Clés rejetées de ${packet.senderId} : signature ou identifiant invalide")
+            return
+        }
+        val senderId = packet.senderId
 
-        val store = repo.getOrCreateStore(
-            localIdentity, localShortId.hashCode()
-        )
-        val senderAddress = SignalProtocolAddress(senderId, 1)
-
-        // Si pas encore de session avec ce pair
-        if (!store.containsSession(senderAddress)) {
-            Log.d(TAG, "Prekeys reçues de $senderId — niveau YELLOW")
+        val existant = repo.getContact(senderId)
+        if (existant == null) {
+            repo.saveContact(
+                RelayContact(
+                    shortId = senderId,
+                    publicKey = bundle.identityKey,
+                    trustLevel = TrustLevel.YELLOW
+                )
+            )
+        } else if (existant.publicKey != bundle.identityKey) {
+            // Même identifiant, autre clé : usurpation possible, on n'y touche pas
+            Log.w(TAG, "Clé différente pour $senderId : ignorée")
+            return
+        } else {
             repo.upgradeTrust(senderId, TrustLevel.YELLOW)
+        }
+        nodeTracker.markPreKeyExchanged(senderId)
+
+        try {
+            val adresse = SignalProtocolAddress(senderId, RelaySession.DEVICE_ID)
+            if (session.accepterBundle(adresse, bundle)) {
+                Log.d(TAG, "Session ouverte avec $senderId")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Session impossible avec $senderId : ${e.message}")
         }
     }
 
