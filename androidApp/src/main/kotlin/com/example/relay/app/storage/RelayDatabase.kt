@@ -1,6 +1,8 @@
 package com.relay.app.storage
 
 import androidx.room.*
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 // ─── Entités ───────────────────────────────────────────────
@@ -33,7 +35,31 @@ data class MessageEntity(
     val delivered: Boolean = false
 )
 
+/**
+ * État du protocole Signal (sessions, clés pré-signées), sérialisé.
+ * kind : "session" | "prekey" | "signed_prekey" ; recordKey : identifiant dans ce type.
+ */
+@Entity(tableName = "signal_records", primaryKeys = ["kind", "recordKey"])
+data class SignalRecordEntity(
+    val kind: String,
+    val recordKey: String,
+    val data: ByteArray
+)
+
 // ─── DAOs ──────────────────────────────────────────────────
+
+/** Appels synchrones : le protocole Signal les fait depuis Dispatchers.IO. */
+@Dao
+interface SignalRecordDao {
+    @Query("SELECT * FROM signal_records")
+    fun getAll(): List<SignalRecordEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    fun save(record: SignalRecordEntity)
+
+    @Query("DELETE FROM signal_records WHERE kind = :kind AND recordKey = :recordKey")
+    fun delete(kind: String, recordKey: String)
+}
 
 @Dao
 interface IdentityDao {
@@ -84,16 +110,28 @@ interface MessageDao {
 // ─── Database ──────────────────────────────────────────────
 
 @Database(
-    entities = [IdentityEntity::class, ContactEntity::class, MessageEntity::class],
-    version = 1,
+    entities = [IdentityEntity::class, ContactEntity::class, MessageEntity::class, SignalRecordEntity::class],
+    version = 2,
     exportSchema = false
 )
 abstract class RelayDatabase : RoomDatabase() {
     abstract fun identityDao(): IdentityDao
     abstract fun contactDao(): ContactDao
     abstract fun messageDao(): MessageDao
+    abstract fun signalRecordDao(): SignalRecordDao
 
     companion object {
+        /** v2 : table signal_records (état Signal persistant). */
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `signal_records` (" +
+                        "`kind` TEXT NOT NULL, `recordKey` TEXT NOT NULL, `data` BLOB NOT NULL, " +
+                        "PRIMARY KEY(`kind`, `recordKey`))"
+                )
+            }
+        }
+
         @Volatile private var INSTANCE: RelayDatabase? = null
 
         fun getInstance(context: android.content.Context): RelayDatabase {
@@ -102,7 +140,7 @@ abstract class RelayDatabase : RoomDatabase() {
                     context.applicationContext,
                     RelayDatabase::class.java,
                     "relay.db"
-                ).build().also { INSTANCE = it }
+                ).addMigrations(MIGRATION_1_2).build().also { INSTANCE = it }
             }
         }
     }

@@ -10,7 +10,6 @@ import kotlinx.coroutines.flow.map
 import org.signal.libsignal.protocol.IdentityKey
 import org.signal.libsignal.protocol.IdentityKeyPair
 import org.signal.libsignal.protocol.SignalProtocolAddress
-import org.signal.libsignal.protocol.state.impl.InMemorySignalProtocolStore
 
 /**
  * Source de vérité unique.
@@ -23,10 +22,6 @@ class RelayRepository(context: Context) {
     private val identityDao = db.identityDao()
     private val contactDao = db.contactDao()
     private val messageDao = db.messageDao()
-
-    // Sessions actives en mémoire — clé = shortId du pair
-    private val sessionStores =
-        mutableMapOf<String, InMemorySignalProtocolStore>()
 
     // ─── Identité ────────────────────────────────────────────
 
@@ -97,18 +92,11 @@ class RelayRepository(context: Context) {
     // ─── Sessions crypto ─────────────────────────────────────
 
     /**
-     * Retourne (ou crée) un store de session pour un pair.
-     * Sprint 5 : persisté dans Room pour survivre aux redémarrages.
+     * Le store Signal de l'appareil, persistant dans Room.
+     * À appeler hors du thread principal : il lit la base à sa création.
      */
-    fun getOrCreateStore(
-        identity: IdentityKeyPair,
-        registrationId: Int
-    ): InMemorySignalProtocolStore {
-        val key = identity.publicKey.hashCode().toString()
-        return sessionStores.getOrPut(key) {
-            InMemorySignalProtocolStore(identity, registrationId)
-        }
-    }
+    fun signalStore(identity: IdentityKeyPair, registrationId: Int): PersistentSignalStore =
+        PersistentSignalStore(identity, registrationId, db.signalRecordDao())
 
     // ─── Conversions ─────────────────────────────────────────
 

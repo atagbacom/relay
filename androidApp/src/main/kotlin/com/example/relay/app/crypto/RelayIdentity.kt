@@ -1,5 +1,6 @@
 package com.relay.app.crypto
 
+import org.signal.libsignal.protocol.IdentityKey
 import org.signal.libsignal.protocol.IdentityKeyPair
 
 class RelayIdentity {
@@ -36,8 +37,11 @@ class RelayIdentity {
          * encodés en hex. Ex : "a3f7b2c1"
          * C'est ce que l'utilisateur voit comme son identité dans l'UI.
          */
-        fun shortId(identity: IdentityKeyPair): String {
-            val pubKeyBytes = identity.publicKey.publicKey.serialize()
+        fun shortId(identity: IdentityKeyPair): String = shortIdOf(identity.publicKey)
+
+        /** Le même identifiant, calculé depuis la clé publique d'un correspondant. */
+        fun shortIdOf(key: IdentityKey): String {
+            val pubKeyBytes = key.publicKey.serialize()
             return pubKeyBytes.take(4).joinToString("") {
                 "%02x".format(it)
             }
