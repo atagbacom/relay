@@ -112,6 +112,12 @@ private fun PorteAutorisations(onPret: () -> Unit, contenu: @Composable () -> Un
     } else {
         AccueilScreen(refusDefinitif = refusDefinitif && demandeFaite) {
             val tout = autorisationsReseau().toMutableList()
+            // Recommandée partout : certains fabricants (Infinix, Tecno, Xiaomi…)
+            // ne livrent les appareils Bluetooth trouvés qu'avec la localisation
+            if (Manifest.permission.ACCESS_FINE_LOCATION !in tout) {
+                tout += Manifest.permission.ACCESS_FINE_LOCATION
+                tout += Manifest.permission.ACCESS_COARSE_LOCATION
+            }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) tout += Manifest.permission.POST_NOTIFICATIONS
             demande.launch(tout.toTypedArray())
         }

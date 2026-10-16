@@ -58,6 +58,11 @@ fun AccueilScreen(refusDefinitif: Boolean, onAutoriser: () -> Unit) {
             indispensable = true
         )
         Raison(
+            Icones.Reseau, "Localisation",
+            "Certains téléphones (Infinix, Tecno, Xiaomi…) l'exigent pour trouver les appareils Bluetooth. Relay ne lit pas votre position et ne l'envoie nulle part.",
+            indispensable = false
+        )
+        Raison(
             Icones.Messages, "Notifications",
             "Pour vous prévenir d'un message ou d'une alerte, même quand Relay est fermé. Le contenu n'apparaît pas sur l'écran verrouillé.",
             indispensable = false

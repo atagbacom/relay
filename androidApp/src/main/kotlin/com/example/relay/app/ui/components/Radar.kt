@@ -47,7 +47,26 @@ data class NoeudRadar(
     val identifiant: Boolean = false,
     /** Pour un appareil relayé : l'appareil par lequel il est joignable. */
     val viaId: String? = null,
+    /** Force du signal Bluetooth (dBm) : plus il est fort, plus l'appareil est près du centre. */
+    val rssi: Int? = null,
 )
+
+/**
+ * Distance indicative au centre (0 = centre, 1 = bord) d'après la force du
+ * signal, arrondie par paliers de 5 dBm pour que les points ne tremblent pas.
+ * Le Bluetooth donne une idée de la distance, jamais de la direction.
+ */
+fun distanceDepuisSignal(rssi: Int): Float {
+    val palier = (rssi / 5) * 5
+    return (((-palier) - 40) / 55f).coerceIn(0f, 1f) * 0.58f + 0.3f
+}
+
+/** La même chose en mots, pour le lecteur d'écran et le statut. */
+fun procheDepuisSignal(rssi: Int): String = when {
+    rssi >= -60 -> "très proche"
+    rssi >= -75 -> "proche"
+    else -> "à la limite de portée"
+}
 
 /**
  * Radar des appareils joignables, sur fond bleu nuit.
@@ -208,7 +227,7 @@ fun RadarReseau(
 private fun positionner(noeuds: List<NoeudRadar>): Map<String, Offset> {
     val res = mutableMapOf<String, Offset>()
     noeuds.filter { it.direct }.forEach { n ->
-        res[n.id] = polaire(angleDe(n.id), 0.6f)
+        res[n.id] = polaire(angleDe(n.id), n.rssi?.let { distanceDepuisSignal(it) } ?: 0.6f)
     }
     noeuds.filter { !it.direct }.forEach { n ->
         // Un appareil relayé se place plus loin, du côté de son relais

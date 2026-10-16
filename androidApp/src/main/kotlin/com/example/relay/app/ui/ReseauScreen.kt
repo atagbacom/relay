@@ -40,23 +40,25 @@ fun ReseauScreen(
     onReglages: () -> Unit = {},
 ) {
     val contacts by viewModel.contacts.collectAsState(emptyList())
-    val peers by viewModel.peers.collectAsState()
+    val peers by viewModel.pairsVus.collectAsState()
     val batterie by viewModel.batteryLevel.collectAsState()
     val mode by viewModel.batteryMode.collectAsState()
     var selection by remember { mutableStateOf<String?>(null) }
 
     val noeuds = remember(peers, contacts) {
-        peers.map { id ->
+        peers.map { pair ->
+            val id = pair.shortId
             val contact = contacts.firstOrNull { it.shortId == id }
             val confiance = Confiance.depuis(contact?.trustLevel)
             val nom = contact?.displayName?.takeIf { it != id }
             NoeudRadar(
                 id = id,
                 texte = nom?.let { initiales(it) } ?: id.takeLast(4).uppercase(),
-                description = "${nom ?: "Appareil ${id.takeLast(4).uppercase()}"}, à portée directe, ${confiance.libelle.lowercase()}",
+                description = "${nom ?: "Appareil ${id.takeLast(4).uppercase()}"}, ${procheDepuisSignal(pair.rssi)}, ${confiance.libelle.lowercase()}",
                 confiance = confiance,
                 direct = true,
                 identifiant = nom == null,
+                rssi = pair.rssi,
             )
         }
     }
@@ -107,9 +109,9 @@ fun ReseauScreen(
                         Spacer(Modifier.height(6.dp))
                         Text(
                             when {
-                                n != null -> "À portée directe · ${n.confiance.libelle.lowercase()}"
+                                n != null -> "${n.rssi?.let { procheDepuisSignal(it).replaceFirstChar { c -> c.uppercase() } } ?: "À portée"} · ${n.confiance.libelle.lowercase()}"
                                 noeuds.isEmpty() -> "Le relais reste actif : les messages partiront dès qu'un appareil passera."
-                                else -> "Touchez un appareil pour lui écrire"
+                                else -> "Touchez un appareil pour lui écrire · distance indicative, d'après le signal"
                             },
                             color = RelayPalette.BleuCiel,
                             style = MaterialTheme.typography.bodyMedium,
