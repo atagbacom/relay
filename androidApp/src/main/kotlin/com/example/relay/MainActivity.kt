@@ -74,6 +74,7 @@ sealed class Screen {
     object Reseau : Screen()
     object Messages : Screen()
     data class Conversation(val contactId: String) : Screen()
+    data class Fiche(val contactId: String) : Screen()
     object Qr : Screen()
 }
 
@@ -121,6 +122,18 @@ fun RelayApp(viewModel: MainViewModel) {
                     viewModel = viewModel,
                     onBack = { screen = if (onglet == Onglet.MESSAGES) Screen.Messages else Screen.Reseau },
                     onQrExchange = {
+                        qrReturnContact = s.contactId
+                        screen = Screen.Qr
+                    },
+                    onVoirFiche = { screen = Screen.Fiche(s.contactId) }
+                )
+
+                is Screen.Fiche -> FicheContactScreen(
+                    contactId = s.contactId,
+                    viewModel = viewModel,
+                    onBack = { screen = Screen.Conversation(s.contactId) },
+                    onEcrire = { screen = Screen.Conversation(s.contactId) },
+                    onVerifier = {
                         qrReturnContact = s.contactId
                         screen = Screen.Qr
                     }

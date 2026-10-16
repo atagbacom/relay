@@ -44,7 +44,8 @@ fun ConversationScreen(
     contactId: String,
     viewModel: MainViewModel,
     onBack: () -> Unit,
-    onQrExchange: () -> Unit
+    onQrExchange: () -> Unit,
+    onVoirFiche: () -> Unit = {}
 ) {
     val messages by viewModel.messagesForContact(contactId).collectAsState(emptyList())
     val contact by viewModel.getContact(contactId).collectAsState(null)
@@ -79,6 +80,13 @@ fun ConversationScreen(
                     IconButton(onClick = onBack) {
                         Icon(Icones.Retour, contentDescription = "Retour", tint = MaterialTheme.colorScheme.primary)
                     }
+                    Row(
+                        Modifier
+                            .weight(1f)
+                            .clickable(onClickLabel = "Voir la fiche du contact", onClick = onVoirFiche)
+                            .padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                     Box {
                         Avatar(
                             texte = if (estIdentifiant) contactId.takeLast(4).uppercase() else initiales(nom),
@@ -104,6 +112,7 @@ fun ConversationScreen(
                                 color = confiance.couleurs.texte
                             )
                         }
+                    }
                     }
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
