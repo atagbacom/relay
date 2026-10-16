@@ -85,6 +85,10 @@ object QrKeyExchange {
             // Valide le format de la clé publique
             val pubKey = org.signal.libsignal.protocol.IdentityKey(pkBytes, 0)
 
+            // La clé doit correspondre à l'identifiant affiché, sinon on
+            // enregistrerait la clé de n'importe qui sous le nom d'un autre
+            if (RelayIdentity.shortIdOf(pubKey) != shortId) return null
+
             QrContact(shortId = shortId, publicKey = pubKey)
         } catch (e: Exception) {
             null  // Format invalide — on ignore silencieusement
