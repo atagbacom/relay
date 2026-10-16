@@ -9,6 +9,7 @@ import android.graphics.Bitmap
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.relay.app.crypto.Empreinte
 import com.relay.app.crypto.QrKeyExchange
 import com.relay.app.crypto.TrustLevel
 import com.relay.app.mesh.BatteryMonitor
@@ -25,6 +26,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     val shortId = MutableStateFlow("…")
     val qrBitmap = MutableStateFlow<Bitmap?>(null)
+    /** Empreinte lisible de notre clé, à comparer à voix haute. */
+    val empreinte = MutableStateFlow("")
+    private var identite: org.signal.libsignal.protocol.IdentityKeyPair? = null
     val peerCount = MutableStateFlow(0)
     /** Identifiants courts des appareils à portée Bluetooth directe. */
     val peers = MutableStateFlow<List<String>>(emptyList())
@@ -70,12 +74,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     init {
         viewModelScope.launch {
             val identity = repo.getOrCreateIdentity()
-            val id = repo.getShortId()
-            shortId.value = id
-
-            // Génère le QR code
-            val payload = QrKeyExchange.generatePayload(identity, id)
-            qrBitmap.value = QrKeyExchange.generateBitmap(payload)
+            identite = identity
+            shortId.value = repo.getShortId()
+            empreinte.value = Empreinte.de(identity.publicKey)
+            regenererQr()
         }
 
         val filter = IntentFilter().apply {
@@ -85,6 +87,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         ContextCompat.registerReceiver(app, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
     }
+
+    /**
+     * Le QR contient un horodatage et expire après 5 minutes (anti-rejeu) :
+     * l'écran de vérification le renouvelle régulièrement.
+     */
+    fun regenererQr() {
+        val identity = identite ?: return
+        val payload = QrKeyExchange.generatePayload(identity, shortId.value)
+        qrBitmap.value = QrKeyExchange.generateBitmap(payload)
+    }
+
+    /** Les quatre mots que les deux téléphones doivent afficher à l'identique. */
+    fun motsDeSecurite(autre: org.signal.libsignal.protocol.IdentityKey): List<String> =
+        identite?.let { Empreinte.motsDeSecurite(it.publicKey, autre) } ?: emptyList()
 
     fun sendMessage(recipientId: String, text: String) {
         if (text.isBlank()) return

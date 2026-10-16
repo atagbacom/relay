@@ -128,7 +128,11 @@ fun RelayApp(viewModel: MainViewModel) {
 
                 is Screen.Qr -> QrScreen(
                     viewModel = viewModel,
-                    onContactAdded = { retourQr() },
+                    onContactAdded = { id ->
+                        qrReturnContact = null
+                        if (onglet == Onglet.VERIFIER) onglet = Onglet.MESSAGES
+                        screen = Screen.Conversation(id)
+                    },
                     onBack = { retourQr() }
                 )
             }
