@@ -21,3 +21,6 @@ data class UiMessage(
     val delivered: Boolean = false
 )
 
+
+/** Une alerte diffusée : à qui, et depuis quand (pour suivre la remise). */
+data class SuiviAlerte(val destinataires: List<String>, val depuis: Long)

@@ -25,6 +25,7 @@ enum class Onglet(val libelle: String, val icone: ImageVector) {
     RESEAU("Réseau", Icones.Reseau),
     MESSAGES("Messages", Icones.Messages),
     VERIFIER("Vérifier", Icones.CodeQr),
+    ALERTE("Alerte", Icones.Alerte),
 }
 
 /** Barre du bas : l'onglet actif est souligné d'or. */
@@ -45,7 +46,11 @@ fun BarreNavigation(actif: Onglet, onChoix: (Onglet) -> Unit) {
                 Onglet.values().forEach { o ->
                     val choisi = o == actif
                     val couleur by animateColorAsState(
-                        if (choisi) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        when {
+                            o == Onglet.ALERTE -> MaterialTheme.colorScheme.error
+                            choisi -> MaterialTheme.colorScheme.primary
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        },
                         label = "couleur"
                     )
                     val trait by animateDpAsState(if (choisi) 18.dp else 0.dp, label = "trait")

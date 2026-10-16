@@ -157,7 +157,18 @@ Chaque entrée suit le même schéma : **constat**, **cause**, **solution**, **l
   - bleu nuit et or Àtagbà, thème clair par défaut et sombre selon le téléphone ;
   - aucune information portée par la couleur seule (toujours texte et icône) ;
   - des mots simples (« appareils à proximité » plutôt que « pairs »).
-- **État.** Thème Compose commencé ; refonte des écrans à venir.
+- **Réalisation** (une PR par étape, #21 à #31) :
+  - thème bleu nuit et or, IBM Plex embarquée (l'app marche hors ligne), icônes vectorielles légères ;
+  - radar animé des appareils à portée, écrans Réseau, Messages, Conversation (trajet du message jusqu'à « Remis »), Vérifier, Fiche contact, Alerte ;
+  - animations coupées quand l'utilisateur les a désactivées dans Android ; appareils du radar et commandes annoncés par le lecteur d'écran.
+- **Défauts trouvés pendant la refonte.**
+  - le QR code expirait après 5 minutes mais n'était généré qu'au lancement ;
+  - la clé d'un QR scanné n'était pas comparée à l'identifiant affiché ;
+  - un même QR était enregistré à chaque image de la caméra, et la caméra n'était pas libérée ;
+  - un contact n'avait que son identifiant technique : ajout du renommage.
+- **Ajouts.** Empreinte lisible de la clé et quatre mots de sécurité à lire à voix haute, qui changent si quelqu'un s'interpose ; alerte réelle (message chiffré à chaque contact, remise suivie contact par contact).
+
+> **Leçon.** Refaire un écran oblige à relire son code : la moitié des défauts de cette phase ont été trouvés en redessinant.
 
 ---
 
