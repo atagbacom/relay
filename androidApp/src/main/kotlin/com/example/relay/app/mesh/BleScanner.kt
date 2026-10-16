@@ -35,16 +35,19 @@ class BleScanner(private val context: Context) {
             // Extrait le shortId depuis le manufacturer data
             val manufacturerData = result.scanRecord
                 ?.getManufacturerSpecificData(0x1234)
+            EtatMesh.annoncesRecues.value += 1
             val shortId = manufacturerData
                 ?.let { String(it, Charsets.UTF_8) }
-                ?: return
+                ?: return  // annonce Relay sans réponse au scan (encore) : on attend la suivante
 
             Log.d(TAG, "Pair découvert : $shortId @ $address")
             onPeerDiscovered?.invoke(address, shortId, rssi)
         }
 
         override fun onScanFailed(errorCode: Int) {
-            Log.e(TAG, "Scan échoué : $errorCode")
+            val raison = EtatMesh.echecScan(errorCode)
+            EtatMesh.scan.value = "échec : $raison"
+            EtatMesh.noter("Scan Bluetooth impossible : $raison")
         }
     }
 
@@ -65,11 +68,19 @@ class BleScanner(private val context: Context) {
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
 
-        scanner?.startScan(listOf(filter), settings, scanCallback)
-        Log.d(TAG, "Scan démarré")
+        val s = scanner
+        if (s == null) {
+            EtatMesh.scan.value = "échec : scanner Bluetooth indisponible"
+            return
+        }
+        runCatching { s.stopScan(scanCallback) }
+        s.startScan(listOf(filter), settings, scanCallback)
+        EtatMesh.scan.value = "actif"
+        EtatMesh.noter("Scan Bluetooth actif")
     }
 
     fun stop() {
-        scanner?.stopScan(scanCallback)
+        runCatching { scanner?.stopScan(scanCallback) }
+        EtatMesh.scan.value = "arrêté"
     }
 }

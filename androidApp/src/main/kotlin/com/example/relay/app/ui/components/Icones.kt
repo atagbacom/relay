@@ -56,5 +56,9 @@ object Icones {
     val Horloge = trait("horloge", 2.2f,
         "M12 3.5a8.5 8.5 0 1 0 0 17a8.5 8.5 0 1 0 0-17z", "M12 7.5v5l3 2")
     val Batterie = trait("batterie", 1.8f, "M2.5 7h17v10h-17z", "M22 10.5v3")
+    val Reglages = trait("reglages", 1.9f,
+        "M4 7h9", "M19 7h1", "M4 17h3", "M13 17h7",
+        "M16 4.5a2.5 2.5 0 1 0 0 5a2.5 2.5 0 1 0 0-5z",
+        "M10 14.5a2.5 2.5 0 1 0 0 5a2.5 2.5 0 1 0 0-5z")
     val PointPlein = plein("point", "M12 9.5a2.5 2.5 0 1 0 0 5a2.5 2.5 0 1 0 0-5z")
 }

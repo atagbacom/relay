@@ -7,6 +7,8 @@ import com.relay.app.model.RelayContact
 import com.relay.app.storage.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.signal.libsignal.protocol.IdentityKey
 import org.signal.libsignal.protocol.IdentityKeyPair
 import org.signal.libsignal.protocol.SignalProtocolAddress
@@ -17,6 +19,11 @@ import org.signal.libsignal.protocol.SignalProtocolAddress
  * Jamais d'accès direct à la base depuis ailleurs.
  */
 class RelayRepository(context: Context) {
+
+    private companion object {
+        /** Commun à toutes les instances (écran et service) du processus. */
+        val verrouIdentite = Mutex()
+    }
 
     private val db = RelayDatabase.getInstance(context)
     private val identityDao = db.identityDao()
@@ -29,20 +36,19 @@ class RelayRepository(context: Context) {
      * Charge l'identité locale depuis Room.
      * Si elle n'existe pas encore, en génère une nouvelle et la persiste.
      */
-    suspend fun getOrCreateIdentity(): IdentityKeyPair {
-        val existing = identityDao.get()
-        if (existing != null) {
-            return RelayIdentity.deserialize(existing.serializedKeyPair)
-        }
-
-        val newIdentity = RelayIdentity.generate()
-        identityDao.save(
+    suspend fun getOrCreateIdentity(): IdentityKeyPair = verrouIdentite.withLock {
+        // L'écran et le service la demandent en même temps au premier
+        // lancement : avant, chacun en créait une et la seconde écrasait la
+        // première (QR et annonce Bluetooth avec deux identités différentes)
+        identityDao.get()?.let { return@withLock RelayIdentity.deserialize(it.serializedKeyPair) }
+        val nouvelle = RelayIdentity.generate()
+        identityDao.insertIfAbsent(
             IdentityEntity(
-                serializedKeyPair = RelayIdentity.serialize(newIdentity),
-                shortId = RelayIdentity.shortId(newIdentity)
+                serializedKeyPair = RelayIdentity.serialize(nouvelle),
+                shortId = RelayIdentity.shortId(nouvelle)
             )
         )
-        return newIdentity
+        RelayIdentity.deserialize(identityDao.get()!!.serializedKeyPair)
     }
 
     suspend fun getShortId(): String {

@@ -189,6 +189,22 @@ Chaque entrée suit le même schéma : **constat**, **cause**, **solution**, **l
 
 > **Leçon.** Compiler et tester la logique ne suffit pas : il faut lancer l'application. Un test de démarrage automatique aurait attrapé ce plantage avant qu'il n'arrive sur un téléphone.
 
+
+### 14. Deux téléphones qui ne se voient jamais
+
+- **Constat (essai à deux téléphones).** Le design et le scan des codes fonctionnent. Mais les téléphones ne se voient jamais sur le radar, même côte à côte, Bluetooth éteint puis rallumé, application relancée. Les messages ne passent pas.
+- **Causes trouvées dans le code** (sans journal du téléphone, donc à confirmer) :
+  - si le Bluetooth était éteint au démarrage du service, celui-ci se mettait en attente sans jamais surveiller son rallumage. Fermer l'application ne l'arrêtait pas : il ne redémarrait donc jamais ;
+  - au premier lancement, l'écran et le service créaient chacun une identité et la seconde écrasait la première : le QR code et l'annonce Bluetooth pouvaient porter deux identités différentes ;
+  - le radar n'était mis à jour que lorsqu'un nouvel appareil apparaissait : il restait vide à la réouverture de l'application.
+- **Solution.**
+  - le service relance annonce, scan et serveur dès que le Bluetooth se rallume ;
+  - identité créée une seule fois, sous verrou, sans jamais écraser l'existante ;
+  - état du réseau partagé directement entre le service et l'écran, rafraîchi toutes les 5 s ;
+  - **écran de diagnostic** : identité, Bluetooth, autorisations, état de l'annonce, du scan et du serveur (avec la raison en cas d'échec), annonces reçues, appareils vus, journal partageable, bouton « Relancer le réseau ».
+
+> **Leçon.** Sur le terrain, sans câble ni adb, une application doit pouvoir expliquer elle-même pourquoi elle ne marche pas.
+
 ---
 
 ## Points ouverts
