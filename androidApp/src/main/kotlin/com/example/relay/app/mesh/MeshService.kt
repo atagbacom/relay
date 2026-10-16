@@ -75,6 +75,7 @@ class MeshService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        Notifications.creerCanaux(this)
         startForeground(NOTIF_ID, buildNotification("Démarrage…"))
 
         repo = RelayRepository(this)
@@ -321,6 +322,9 @@ class MeshService : Service() {
             )
 
             // Notifie l'UI
+            val nom = repo.getContact(packet.senderId)?.alias ?: "Appareil ${packet.senderId.takeLast(4).uppercase()}"
+            Notifications.message(this, packet.senderId, nom, plaintext)
+
             sendBroadcast(Intent(ACTION_MESSAGE_RECEIVED).apply {
                 setPackage(packageName)
                 putExtra(EXTRA_SENDER_ID, packet.senderId)

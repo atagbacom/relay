@@ -237,6 +237,36 @@ private fun MonCode(qr: android.graphics.Bitmap?, empreinte: String) {
 @Composable
 private fun Scanner(erreur: String?, onScanne: (String) -> Unit) {
     val contexte = LocalContext.current
+    // La caméra est demandée ici, au moment où elle sert
+    var cameraOk by remember {
+        mutableStateOf(ContextCompat.checkSelfPermission(contexte, android.Manifest.permission.CAMERA) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED)
+    }
+    val demande = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { cameraOk = it }
+    LaunchedEffect(Unit) { if (!cameraOk) demande.launch(android.Manifest.permission.CAMERA) }
+    if (!cameraOk) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                "Pour scanner le code de votre contact, Relay a besoin de la caméra. L'image reste sur le téléphone.",
+                style = MaterialTheme.typography.bodyLarge, color = RelayPalette.BleuCiel, textAlign = TextAlign.Center
+            )
+            Button(
+                onClick = { demande.launch(android.Manifest.permission.CAMERA) },
+                colors = ButtonDefaults.buttonColors(containerColor = RelayPalette.Or, contentColor = RelayPalette.Encre),
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.padding(top = 16.dp).height(52.dp)
+            ) { Text("Autoriser la caméra", style = MaterialTheme.typography.labelLarge) }
+        }
+        return
+    }
+    ScannerCamera(erreur, onScanne)
+}
+
+@Composable
+private fun ScannerCamera(erreur: String?, onScanne: (String) -> Unit) {
+    val contexte = LocalContext.current
     val cycleDeVie = LocalLifecycleOwner.current
     val anime = animationsActivees()
     val ligne = if (anime) {

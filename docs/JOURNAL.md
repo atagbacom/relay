@@ -205,6 +205,17 @@ Chaque entrée suit le même schéma : **constat**, **cause**, **solution**, **l
 
 > **Leçon.** Sur le terrain, sans câble ni adb, une application doit pouvoir expliquer elle-même pourquoi elle ne marche pas.
 
+
+### 15. Autorisations expliquées et notifications
+
+- **Constats.**
+  - toutes les autorisations étaient demandées d'un coup au lancement, sans explication ; refuser **la caméra** empêchait **le réseau** de démarrer ;
+  - aucune notification à l'arrivée d'un message : il fallait ouvrir l'application pour le voir.
+- **Solution.**
+  - écran d'accueil qui explique chaque autorisation ; le réseau démarre dès que le Bluetooth est autorisé ; si l'utilisateur a refusé définitivement, l'écran l'envoie dans les réglages du téléphone ;
+  - caméra demandée au moment de scanner ;
+  - notifications des messages et des alertes, sans contenu sur l'écran verrouillé ; les toucher ouvre la conversation.
+
 ---
 
 ## Points ouverts
