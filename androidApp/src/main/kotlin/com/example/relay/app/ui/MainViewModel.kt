@@ -120,11 +120,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * chemin que les autres messages (relais de proche en proche).
      * Retourne les destinataires et l'heure d'envoi, pour suivre la remise.
      */
-    fun diffuserAlerte(type: String): SuiviAlerte {
+    fun diffuserAlerte(type: String, precision: String = ""): SuiviAlerte {
         val destinataires = contacts.value.map { it.shortId }
         val depuis = System.currentTimeMillis()
-        destinataires.forEach { sendMessage(it, "ALERTE · $type") }
+        val texte = "ALERTE · $type" + precision.trim().takeIf { it.isNotEmpty() }?.let { " — $it" }.orEmpty()
+        destinataires.forEach { sendMessage(it, texte) }
         return SuiviAlerte(destinataires, depuis)
+    }
+
+    private val typesAlerte = TypesAlerte(app)
+    val types = MutableStateFlow(typesAlerte.tous())
+
+    fun ajouterTypeAlerte(nom: String, detail: String) {
+        typesAlerte.ajouter(nom, detail); types.value = typesAlerte.tous()
+    }
+
+    fun supprimerTypeAlerte(nom: String) {
+        typesAlerte.supprimer(nom); types.value = typesAlerte.tous()
     }
 
     /** Pour chaque destinataire de l'alerte : true quand elle lui a été remise. */
