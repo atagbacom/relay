@@ -61,6 +61,10 @@ fun DiagnosticScreen(viewModel: MainViewModel, onBack: () -> Unit) {
     }.map { (nom, p) -> nom to (ContextCompat.checkSelfPermission(contexte, p) == PackageManager.PERMISSION_GRANTED) }
 
     val serviceDemarre = identifiantService.isNotEmpty()
+    val localisationActivee = runCatching {
+        val lm = contexte.getSystemService(android.location.LocationManager::class.java)
+        androidx.core.location.LocationManagerCompat.isLocationEnabled(lm)
+    }.getOrDefault(false)
     val memeIdentite = !serviceDemarre || identifiantQr == identifiantService
 
     fun rapport(): String = buildString {
@@ -68,7 +72,7 @@ fun DiagnosticScreen(viewModel: MainViewModel, onBack: () -> Unit) {
         appendLine("Appareil : ${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
         appendLine("Identifiant (QR) : $identifiantQr · (service) : $identifiantService")
         appendLine("Bluetooth : ${bluetooth ?: "inconnu"} · annonce : $annonce · scan : $scan · serveur : $serveur")
-        appendLine("Annonces Relay reçues : $recues · appareils vus : ${pairs.size}")
+        appendLine("Annonces Relay reçues : $recues · appareils vus : ${pairs.size} · localisation : ${if (localisationActivee) "activée" else "désactivée"}")
         autorisations.forEach { (n, ok) -> appendLine("Autorisation $n : ${if (ok) "accordée" else "REFUSÉE"}") }
         appendLine()
         journal.forEach { appendLine(it) }
@@ -104,6 +108,13 @@ fun DiagnosticScreen(viewModel: MainViewModel, onBack: () -> Unit) {
             Etat("Scan (voir les autres)", scan, scan == "actif")
             Etat("Serveur (recevoir des messages)", serveur, serveur == "actif")
             Etat("Annonces Relay reçues", recues.toString(), recues > 0)
+            Etat("Localisation du téléphone", if (localisationActivee) "activée" else "désactivée", localisationActivee)
+            if (!localisationActivee) {
+                Text(
+                    "Sur certains téléphones (Infinix, Tecno, Xiaomi…), la recherche Bluetooth ne trouve rien tant que la localisation est désactivée.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Button(
                     onClick = {

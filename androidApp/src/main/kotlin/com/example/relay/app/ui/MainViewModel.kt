@@ -31,6 +31,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val empreinte = MutableStateFlow("")
     private var identite: org.signal.libsignal.protocol.IdentityKeyPair? = null
     val peerCount = MutableStateFlow(0)
+    /** Appareils à portée, avec la force de leur signal (radar). */
+    val pairsVus: StateFlow<List<EtatMesh.PairVu>> = EtatMesh.pairs
+
     /** Identifiants courts des appareils à portée Bluetooth directe, lus dans l'état du service. */
     val peers: StateFlow<List<String>> = EtatMesh.pairs
         .map { liste -> liste.map { it.shortId } }
