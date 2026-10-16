@@ -20,6 +20,7 @@ import com.relay.app.ui.components.BarreNavigation
 import com.relay.app.ui.components.Onglet
 import androidx.core.content.ContextCompat
 import com.relay.app.mesh.MeshService
+import com.relay.app.mesh.Notifications
 import com.relay.app.ui.*
 import com.relay.app.ui.theme.RelayTheme
 
@@ -27,24 +28,12 @@ class MainActivity : ComponentActivity() {
 
     private val viewModel: MainViewModel by viewModels()
 
-    private val permissions = buildList {
-        add(Manifest.permission.CAMERA)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            add(Manifest.permission.BLUETOOTH_SCAN)
-            add(Manifest.permission.BLUETOOTH_ADVERTISE)
-            add(Manifest.permission.BLUETOOTH_CONNECT)
-        }
-        add(Manifest.permission.ACCESS_FINE_LOCATION)
-    }.toTypedArray()
-
-    private val permissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { results ->
-        if (results.values.all { it }) startMeshService()
-    }
+    /** Conversation à ouvrir, demandée par une notification. */
+    private val contactAOuvrir = mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        contactAOuvrir.value = intent?.getStringExtra(Notifications.EXTRA_OUVRIR_CONTACT)
 
         enableEdgeToEdge()
         val fichierPlantage = RelayApplication.rapport(application)
@@ -56,23 +45,76 @@ class MainActivity : ComponentActivity() {
                 if (r != null) {
                     RapportPlantageScreen(r, onContinuer = { fichierPlantage.delete(); rapport = null })
                 } else {
-                    RelayApp(viewModel)
+                    PorteAutorisations(onPret = ::startMeshService) {
+                        RelayApp(viewModel, contactAOuvrir)
+                    }
                 }
             }
         }
+    }
 
-        if (permissions.all {
-                ContextCompat.checkSelfPermission(this, it) ==
-                        PackageManager.PERMISSION_GRANTED
-            }) {
-            startMeshService()
-        } else {
-            permissionLauncher.launch(permissions)
-        }
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        intent.getStringExtra(Notifications.EXTRA_OUVRIR_CONTACT)?.let { contactAOuvrir.value = it }
     }
 
     private fun startMeshService() {
-        startForegroundService(Intent(this, MeshService::class.java))
+        ContextCompat.startForegroundService(this, Intent(this, MeshService::class.java))
+    }
+}
+
+/** Autorisations sans lesquelles le réseau ne peut pas démarrer. */
+fun autorisationsReseau(): Array<String> =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) arrayOf(
+        Manifest.permission.BLUETOOTH_SCAN,
+        Manifest.permission.BLUETOOTH_ADVERTISE,
+        Manifest.permission.BLUETOOTH_CONNECT,
+    ) else arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
+
+/**
+ * Affiche l'accueil tant que les autorisations Bluetooth manquent ; démarre
+ * le réseau dès qu'elles sont accordées. Les notifications sont demandées
+ * en même temps mais restent facultatives ; la caméra, au moment du scan.
+ */
+@Composable
+private fun PorteAutorisations(onPret: () -> Unit, contenu: @Composable () -> Unit) {
+    val contexte = androidx.compose.ui.platform.LocalContext.current
+    val activite = contexte as ComponentActivity
+    fun accordees() = autorisationsReseau().all {
+        ContextCompat.checkSelfPermission(contexte, it) == PackageManager.PERMISSION_GRANTED
+    }
+    var pret by remember { mutableStateOf(accordees()) }
+    var demandeFaite by remember { mutableStateOf(false) }
+    var refusDefinitif by remember { mutableStateOf(false) }
+
+    val demande = androidx.activity.compose.rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) {
+        pret = accordees()
+        demandeFaite = true
+        // Refusé et Android ne reposera plus la question : passer par les réglages
+        refusDefinitif = !pret && autorisationsReseau().none { p -> activite.shouldShowRequestPermissionRationale(p) }
+    }
+
+    // Retour des réglages du téléphone : revérifier
+    val cycle = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    DisposableEffect(cycle) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
+            if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) pret = accordees()
+        }
+        cycle.lifecycle.addObserver(obs)
+        onDispose { cycle.lifecycle.removeObserver(obs) }
+    }
+    LaunchedEffect(pret) { if (pret) onPret() }
+
+    if (pret) {
+        contenu()
+    } else {
+        AccueilScreen(refusDefinitif = refusDefinitif && demandeFaite) {
+            val tout = autorisationsReseau().toMutableList()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) tout += Manifest.permission.POST_NOTIFICATIONS
+            demande.launch(tout.toTypedArray())
+        }
     }
 }
 
@@ -89,7 +131,7 @@ sealed class Screen {
 }
 
 @Composable
-fun RelayApp(viewModel: MainViewModel) {
+fun RelayApp(viewModel: MainViewModel, contactAOuvrir: MutableState<String?> = mutableStateOf(null)) {
     var screen by remember { mutableStateOf<Screen>(Screen.Reseau) }
     var onglet by remember { mutableStateOf(Onglet.RESEAU) }
     var qrReturnContact by remember { mutableStateOf<String?>(null) }
@@ -108,6 +150,15 @@ fun RelayApp(viewModel: MainViewModel) {
             ?: if (onglet == Onglet.MESSAGES) Screen.Messages else Screen.Reseau
         if (onglet == Onglet.VERIFIER) onglet = Onglet.RESEAU
         qrReturnContact = null
+    }
+
+    // Ouverture depuis une notification
+    LaunchedEffect(contactAOuvrir.value) {
+        contactAOuvrir.value?.let {
+            onglet = Onglet.MESSAGES
+            screen = Screen.Conversation(it)
+            contactAOuvrir.value = null
+        }
     }
 
     val avecBarre = screen is Screen.Reseau || screen is Screen.Messages
