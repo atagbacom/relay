@@ -80,6 +80,9 @@ android {
         jniLibs {
             // Variante de test de libsignal, ~50 Mo par architecture
             excludes += "**/libsignal_jni_testing.so"
+            // x86 = émulateurs : retiré aussi de l'APK universel, que le
+            // découpage par architecture ne filtre pas
+            excludes += listOf("**/x86/*.so", "**/x86_64/*.so")
             // Bibliothèques natives compressées dans l'APK : téléchargement
             // bien plus léger (au prix d'une extraction à l'installation)
             useLegacyPackaging = true
