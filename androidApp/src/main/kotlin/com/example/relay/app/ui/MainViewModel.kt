@@ -102,6 +102,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun motsDeSecurite(autre: org.signal.libsignal.protocol.IdentityKey): List<String> =
         identite?.let { Empreinte.motsDeSecurite(it.publicKey, autre) } ?: emptyList()
 
+    /** Donne un nom lisible à un contact (vide = revenir à l'identifiant). */
+    fun renommer(contactId: String, nom: String) {
+        viewModelScope.launch {
+            val contact = repo.getContact(contactId) ?: return@launch
+            repo.saveContact(contact.copy(alias = nom.trim().take(40).ifEmpty { null }))
+        }
+    }
+
     fun sendMessage(recipientId: String, text: String) {
         if (text.isBlank()) return
         val intent = Intent(getApplication(), MeshService::class.java).apply {
