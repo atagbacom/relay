@@ -63,6 +63,16 @@ android {
     namespace = "com.example.relay"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
 
+    signingConfigs {
+        // Clé de débogage versionnée (non secrète) : tous les APK de la CI
+        // ont la même signature et s'installent par-dessus la version précédente
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
     defaultConfig {
         applicationId = "com.example.relay"
         minSdk = libs.versions.android.minSdk.get().toInt()
@@ -82,7 +92,10 @@ android {
             excludes += "**/libsignal_jni_testing.so"
             // x86 = émulateurs : retiré aussi de l'APK universel, que le
             // découpage par architecture ne filtre pas
-            excludes += listOf("**/x86/*.so", "**/x86_64/*.so")
+            // (gardé pour le test de démarrage sur émulateur en CI : -Prelay.emulateur)
+            if (!project.hasProperty("relay.emulateur")) {
+                excludes += listOf("**/x86/*.so", "**/x86_64/*.so")
+            }
             // Bibliothèques natives compressées dans l'APK : téléchargement
             // bien plus léger (au prix d'une extraction à l'installation)
             useLegacyPackaging = true
@@ -95,6 +108,7 @@ android {
             isEnable = true
             reset()
             include("arm64-v8a", "armeabi-v7a")
+            if (project.hasProperty("relay.emulateur")) include("x86_64")
             isUniversalApk = true
         }
     }
