@@ -111,7 +111,23 @@ Chaque entrée suit le même schéma : **constat**, **cause**, **solution**, **l
 
 > **Leçon.** Les données qui arrivent du réseau ne doivent jamais reconstruire d'objets arbitraires : un format explicite, des longueurs bornées, et le rejet par défaut.
 
-### 10. Design : de l'esthétique « terminal » à un outil institutionnel
+### 10. Bluetooth : l'envoi en plusieurs morceaux échouait (#14)
+
+- **Constat.** `BleGattClient` écrivait tous les morceaux d'un paquet à la suite, avec une pause de 50 ms, puis annonçait « envoyé » sans attendre.
+- **Causes.**
+  - Android n'accepte qu'**une écriture GATT à la fois** : les suivantes échouaient ;
+  - les morceaux faisaient 512 octets, alors qu'une écriture en contient au plus **MTU négociée − 3** ;
+  - API dépréciée depuis Android 13 ;
+  - si une écriture visait une autre caractéristique, le serveur ne répondait pas, et le client attendait.
+- **Solution.**
+  - file d'attente : un morceau, attendre sa confirmation, puis le suivant ;
+  - taille des morceaux calculée depuis la MTU réellement obtenue (20 octets si la négociation échoue) ;
+  - délai maximal de 15 s ; nouvelle API d'écriture sur Android 13 et plus ;
+  - découpage et réassemblage extraits dans une classe sans Android (`Fragmentation`, `Reassembleur`), partagée par le client et le serveur, et testée hors appareil.
+
+> **Leçon.** Isoler la logique pure du code matériel : elle devient testable en CI, même sans téléphone.
+
+### 11. Design : de l'esthétique « terminal » à un outil institutionnel
 
 - **Constat.** Interface en police à chasse fixe, vert fluo sur noir, boutons entre crochets : lecture difficile en plein soleil, peu crédible pour une ONG ou la protection civile.
 - **Démarche.** Prototype interactif et animé en 5 écrans, validé avant tout code :
@@ -133,7 +149,7 @@ Chaque entrée suit le même schéma : **constat**, **cause**, **solution**, **l
 | N° | Sujet | Pourquoi c'est important |
 |---|---|---|
 | #12 | L'identifiant court n'a que 3 octets utiles | Un attaquant peut fabriquer une clé qui affiche le même identifiant en quelques secondes ; seule la vérification par QR code protège vraiment |
-| #14 | L'envoi Bluetooth en plusieurs morceaux échoue | Les morceaux partent sans attendre la confirmation et dépassent la taille réellement acceptée |
+| — | Test sur deux vrais téléphones | Toute la chaîne (clés, session, paquet, Bluetooth) n'a encore tourné qu'en tests unitaires |
 
 ---
 
