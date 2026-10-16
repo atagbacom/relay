@@ -28,6 +28,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     val shortId = MutableStateFlow("…")
     val qrBitmap = MutableStateFlow<Bitmap?>(null)
+    private val reglages = com.relay.app.Reglages(app)
+    /** Le nom que l'utilisateur s'est donné (vide si aucun). */
+    val monNom = MutableStateFlow(reglages.monNom)
+
+    fun changerMonNom(nom: String) {
+        reglages.monNom = nom
+        monNom.value = reglages.monNom
+        regenererQr()
+    }
+
     /** Empreinte lisible de notre clé, à comparer à voix haute. */
     val empreinte = MutableStateFlow("")
     private var identite: org.signal.libsignal.protocol.IdentityKeyPair? = null
@@ -100,7 +110,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun regenererQr() {
         val identity = identite ?: return
-        val payload = QrKeyExchange.generatePayload(identity, shortId.value, VerificationMutuelle.Nonces.emettre())
+        val payload = QrKeyExchange.generatePayload(
+            identity, shortId.value, VerificationMutuelle.Nonces.emettre(), reglages.monNom
+        )
         qrBitmap.value = QrKeyExchange.generateBitmap(payload)
     }
 
@@ -173,7 +185,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /**
      * Ajoute un contact au niveau GREEN après scan QR réussi.
      */
-    fun addGreenContact(qrContact: QrKeyExchange.QrContact, nom: String? = null) {
+    fun addGreenContact(qrContact: QrKeyExchange.QrContact, nom: String? = qrContact.nom) {
         // Vérification à un seul scan : notre propre clé part vers celui qu'on vient de scanner
         qrContact.nonce?.let { nonce ->
             val i = Intent(getApplication(), MeshService::class.java).apply {
@@ -187,7 +199,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val existing = repo.getContact(qrContact.shortId)
             val contact = existing?.copy(
                 publicKey = qrContact.publicKey,
-                trustLevel = TrustLevel.GREEN
+                trustLevel = TrustLevel.GREEN,
+                // un nom donné à la main reste prioritaire sur celui transmis
+                alias = existing.alias ?: nom
             ) ?: RelayContact(
                 shortId = qrContact.shortId,
                 publicKey = qrContact.publicKey,

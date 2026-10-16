@@ -134,6 +134,7 @@ sealed class Screen {
     object Qr : Screen()
     object Alerte : Screen()
     object Diagnostic : Screen()
+    object Reglages : Screen()
 }
 
 @Composable
@@ -181,12 +182,19 @@ fun RelayApp(viewModel: MainViewModel, contactAOuvrir: MutableState<String?> = m
                     viewModel = viewModel,
                     onOuvrirConversation = { screen = Screen.Conversation(it) },
                     onVerifier = { versOnglet(Onglet.VERIFIER) },
-                    onReglages = { screen = Screen.Diagnostic }
+                    onReglages = { screen = Screen.Reglages }
+                )
+
+                is Screen.Reglages -> ReglagesScreen(
+                    viewModel = viewModel,
+                    onBack = { screen = Screen.Reseau },
+                    onDiagnostic = { screen = Screen.Diagnostic },
+                    onContact = { screen = Screen.Fiche(it) }
                 )
 
                 is Screen.Diagnostic -> DiagnosticScreen(
                     viewModel = viewModel,
-                    onBack = { screen = Screen.Reseau }
+                    onBack = { screen = Screen.Reglages }
                 )
 
                 is Screen.Messages -> MessagesScreen(

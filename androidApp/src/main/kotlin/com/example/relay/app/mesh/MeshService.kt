@@ -418,7 +418,8 @@ class MeshService : Service() {
     private fun envoyerVerification(destinataire: String, nonce: String) {
         scope.launch {
             pret.await()
-            val contenu = VerificationMutuelle.contenu(localIdentity, nonce, null)
+            val monNom = com.relay.app.Reglages(this@MeshService).monNom.ifBlank { null }
+            val contenu = VerificationMutuelle.contenu(localIdentity, nonce, monNom)
             val packet = RelayPacket(
                 id = UUID.randomUUID().toString(),
                 type = PacketType.VERIFICATION,

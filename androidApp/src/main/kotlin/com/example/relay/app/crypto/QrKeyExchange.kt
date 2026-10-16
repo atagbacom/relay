@@ -31,7 +31,7 @@ object QrKeyExchange {
     /**
      * Génère le contenu JSON du QR code.
      */
-    fun generatePayload(identity: IdentityKeyPair, shortId: String, nonce: String? = null): String {
+    fun generatePayload(identity: IdentityKeyPair, shortId: String, nonce: String? = null, nom: String? = null): String {
         val pubKeyBytes = identity.publicKey.serialize()
         return JSONObject().apply {
             put("v", 1)  // version du format
@@ -41,6 +41,8 @@ object QrKeyExchange {
             // Code à usage unique : prouve que la vérification qu'on recevra
             // ensuite vient de quelqu'un qui a scanné ce QR-ci
             if (nonce != null) put("n", nonce)
+            // Nom choisi par l'utilisateur : celui qui scanne l'enregistre sous ce nom
+            if (!nom.isNullOrBlank()) put("nom", nom.take(40))
         }.toString()
     }
 
@@ -92,7 +94,12 @@ object QrKeyExchange {
             // enregistrerait la clé de n'importe qui sous le nom d'un autre
             if (RelayIdentity.shortIdOf(pubKey) != shortId) return null
 
-            QrContact(shortId = shortId, publicKey = pubKey, nonce = obj.optString("n").ifEmpty { null })
+            QrContact(
+                shortId = shortId,
+                publicKey = pubKey,
+                nonce = obj.optString("n").ifEmpty { null },
+                nom = obj.optString("nom").trim().take(40).ifEmpty { null }
+            )
         } catch (e: Exception) {
             null  // Format invalide — on ignore silencieusement
         }
@@ -102,6 +109,8 @@ object QrKeyExchange {
         val shortId: String,
         val publicKey: org.signal.libsignal.protocol.IdentityKey,
         /** Code à usage unique du QR, pour lui renvoyer notre propre vérification. */
-        val nonce: String? = null
+        val nonce: String? = null,
+        /** Nom choisi par cette personne, s'il y en a un. */
+        val nom: String? = null
     )
 }

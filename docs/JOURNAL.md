@@ -254,6 +254,17 @@ Chaque entrée suit le même schéma : **constat**, **cause**, **solution**, **l
 
 > **Leçon.** La sécurité ne doit pas se payer en effort : un seul scan, mais les mots gardent la garantie qu'on parle à la bonne personne.
 
+### 18. Réglages et nom de profil
+
+- **Constat.** Aucun écran de réglages : impossible de choisir son nom, de retrouver ses contacts hors des conversations ou de savoir quelles licences l'application embarque. La roue dentée ouvrait le diagnostic brut.
+- **Solution.**
+  - écran Réglages : nom, identifiant, empreinte, contacts (renommage via la fiche), état du réseau avec le diagnostic détaillé, accès aux notifications du téléphone, à propos (version, code ouvert, licences) ;
+  - le nom choisi part dans le QR code et dans le paquet de vérification : la personne qui scanne voit tout de suite un nom, pas un identifiant ;
+  - un nom donné à la main par l'utilisateur reste prioritaire sur celui annoncé par le contact.
+- **Licences.** libsignal est sous AGPLv3 : Relay doit rester distribué avec son code source sous une licence compatible.
+
+> **Leçon.** Le nom affiché vient d'abord de celui qui regarde : on propose le nom annoncé, on ne l'impose pas.
+
 ---
 
 ## Points ouverts
@@ -261,7 +272,7 @@ Chaque entrée suit le même schéma : **constat**, **cause**, **solution**, **l
 | N° | Sujet | Pourquoi c'est important |
 |---|---|---|
 | #12 | L'identifiant court n'a que 3 octets utiles | Un attaquant peut fabriquer une clé qui affiche le même identifiant en quelques secondes ; seule la vérification par QR code protège vraiment |
-| — | Test sur deux vrais téléphones | Toute la chaîne (clés, session, paquet, Bluetooth) n'a encore tourné qu'en tests unitaires |
+| — | Test à trois téléphones ou plus | Le relais à plusieurs sauts (bouche à oreille) n'a pas encore été essayé sur le terrain |
 
 ---
 
