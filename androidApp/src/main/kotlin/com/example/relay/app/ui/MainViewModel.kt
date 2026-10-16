@@ -110,6 +110,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Alerte : un message chiffré envoyé à chaque contact, par le même
+     * chemin que les autres messages (relais de proche en proche).
+     * Retourne les destinataires et l'heure d'envoi, pour suivre la remise.
+     */
+    fun diffuserAlerte(type: String): SuiviAlerte {
+        val destinataires = contacts.value.map { it.shortId }
+        val depuis = System.currentTimeMillis()
+        destinataires.forEach { sendMessage(it, "ALERTE · $type") }
+        return SuiviAlerte(destinataires, depuis)
+    }
+
+    /** Pour chaque destinataire de l'alerte : true quand elle lui a été remise. */
+    fun remiseAlerte(suivi: SuiviAlerte): Flow<Map<String, Boolean>> {
+        if (suivi.destinataires.isEmpty()) return flowOf(emptyMap())
+        return combine(suivi.destinataires.map { id ->
+            repo.observeConversation(id).map { messages ->
+                id to (messages.lastOrNull { it.direction == "OUT" && it.timestamp >= suivi.depuis }?.delivered ?: false)
+            }
+        }) { paires -> paires.toMap() }
+    }
+
     fun sendMessage(recipientId: String, text: String) {
         if (text.isBlank()) return
         val intent = Intent(getApplication(), MeshService::class.java).apply {
