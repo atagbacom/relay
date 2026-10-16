@@ -357,6 +357,7 @@ class MeshService : Service() {
         sendBroadcast(Intent(ACTION_PEER_COUNT_CHANGED).apply {
             setPackage(packageName)
             putExtra("count", nodeTracker.activeCount())
+            putExtra("peers", nodeTracker.getActiveNodes().map { it.shortId }.toTypedArray())
         })
     }
 

@@ -12,6 +12,15 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+/** Contact tel qu'affiché dans les listes. */
+data class UiContact(
+    val shortId: String,
+    val displayName: String,
+    val trustLevel: String,
+    val lastMessage: String?,
+    val isOnline: Boolean
+)
+
 /** Message tel qu'affiché dans une conversation. */
 data class UiMessage(
     val id: String,

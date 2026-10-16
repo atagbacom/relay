@@ -26,6 +26,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val shortId = MutableStateFlow("…")
     val qrBitmap = MutableStateFlow<Bitmap?>(null)
     val peerCount = MutableStateFlow(0)
+    /** Identifiants courts des appareils à portée Bluetooth directe. */
+    val peers = MutableStateFlow<List<String>>(emptyList())
     val batteryLevel = MutableStateFlow(100)
     val batteryMode = MutableStateFlow("FULL")
 
@@ -55,6 +57,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 MeshService.ACTION_PEER_COUNT_CHANGED -> {
                     peerCount.value = intent.getIntExtra("count", 0)
+                    peers.value = intent.getStringArrayExtra("peers")?.toList() ?: emptyList()
                 }
                 MeshService.ACTION_BATTERY_CHANGED -> {
                     batteryLevel.value = intent.getIntExtra("level", 100)

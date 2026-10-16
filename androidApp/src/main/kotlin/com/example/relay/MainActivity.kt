@@ -7,9 +7,17 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import com.relay.app.ui.components.BarreNavigation
+import com.relay.app.ui.components.Onglet
 import androidx.core.content.ContextCompat
 import com.relay.app.mesh.MeshService
 import com.relay.app.ui.*
@@ -38,6 +46,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        enableEdgeToEdge()
         setContent {
             RelayTheme {
                 RelayApp(viewModel)
@@ -62,47 +71,67 @@ class MainActivity : ComponentActivity() {
 // ── Navigation ────────────────────────────────────────────
 
 sealed class Screen {
-    object Contacts : Screen()
+    object Reseau : Screen()
+    object Messages : Screen()
     data class Conversation(val contactId: String) : Screen()
     object Qr : Screen()
 }
 
 @Composable
 fun RelayApp(viewModel: MainViewModel) {
-    var screen by remember { mutableStateOf<Screen>(Screen.Contacts) }
+    var screen by remember { mutableStateOf<Screen>(Screen.Reseau) }
+    var onglet by remember { mutableStateOf(Onglet.RESEAU) }
     var qrReturnContact by remember { mutableStateOf<String?>(null) }
 
-    when (val s = screen) {
-        is Screen.Contacts -> ContactsScreen(
-            viewModel = viewModel,
-            onContactSelected = { screen = Screen.Conversation(it) },
-            onQrScan = { screen = Screen.Qr }
-        )
+    fun versOnglet(o: Onglet) {
+        onglet = o
+        screen = when (o) {
+            Onglet.RESEAU -> Screen.Reseau
+            Onglet.MESSAGES -> Screen.Messages
+            Onglet.VERIFIER -> Screen.Qr
+        }
+    }
+    val retourQr = {
+        screen = qrReturnContact?.let { Screen.Conversation(it) }
+            ?: if (onglet == Onglet.MESSAGES) Screen.Messages else Screen.Reseau
+        if (onglet == Onglet.VERIFIER) onglet = Onglet.RESEAU
+        qrReturnContact = null
+    }
 
-        is Screen.Conversation -> ConversationScreen(
-            contactId = s.contactId,
-            viewModel = viewModel,
-            onBack = { screen = Screen.Contacts },
-            onQrExchange = {
-                qrReturnContact = s.contactId
-                screen = Screen.Qr
-            }
-        )
+    val avecBarre = screen is Screen.Reseau || screen is Screen.Messages
+    Scaffold(
+        bottomBar = { if (avecBarre) BarreNavigation(onglet, ::versOnglet) },
+        contentWindowInsets = WindowInsets(0, 0, 0, 0)
+    ) { marges ->
+        Box(Modifier.padding(marges)) {
+            when (val s = screen) {
+                is Screen.Reseau -> ReseauScreen(
+                    viewModel = viewModel,
+                    onOuvrirConversation = { screen = Screen.Conversation(it) },
+                    onVerifier = { versOnglet(Onglet.VERIFIER) }
+                )
 
-        is Screen.Qr -> QrScreen(
-            viewModel = viewModel,
-            onContactAdded = {
-                screen = qrReturnContact
-                    ?.let { Screen.Conversation(it) }
-                    ?: Screen.Contacts
-                qrReturnContact = null
-            },
-            onBack = {
-                screen = qrReturnContact
-                    ?.let { Screen.Conversation(it) }
-                    ?: Screen.Contacts
-                qrReturnContact = null
+                is Screen.Messages -> MessagesScreen(
+                    viewModel = viewModel,
+                    onOuvrirConversation = { screen = Screen.Conversation(it) }
+                )
+
+                is Screen.Conversation -> ConversationScreen(
+                    contactId = s.contactId,
+                    viewModel = viewModel,
+                    onBack = { screen = if (onglet == Onglet.MESSAGES) Screen.Messages else Screen.Reseau },
+                    onQrExchange = {
+                        qrReturnContact = s.contactId
+                        screen = Screen.Qr
+                    }
+                )
+
+                is Screen.Qr -> QrScreen(
+                    viewModel = viewModel,
+                    onContactAdded = { retourQr() },
+                    onBack = { retourQr() }
+                )
             }
-        )
+        }
     }
 }
