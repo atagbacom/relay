@@ -40,14 +40,6 @@ import com.relay.app.ui.theme.RelayPalette
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
-private data class TypeAlerte(val nom: String, val detail: String)
-
-private val TYPES = listOf(
-    TypeAlerte("Besoin médical", "Blessé ou malade, besoin d'aide rapide"),
-    TypeAlerte("Danger", "Prévenir les autres d'un risque"),
-    TypeAlerte("Je suis en sécurité", "Rassurer ses proches et l'équipe"),
-)
-
 private const val DUREE_MAINTIEN_MS = 2000
 
 /**
@@ -57,7 +49,10 @@ private const val DUREE_MAINTIEN_MS = 2000
 @Composable
 fun AlerteScreen(viewModel: MainViewModel, onBack: () -> Unit) {
     val contacts by viewModel.contacts.collectAsState(emptyList())
-    var type by remember { mutableStateOf(TYPES[0]) }
+    val types by viewModel.types.collectAsState()
+    var type by remember { mutableStateOf(types[0]) }
+    var precision by remember { mutableStateOf("") }
+    var nouveau by remember { mutableStateOf(false) }
     var suivi by remember { mutableStateOf<SuiviAlerte?>(null) }
 
     Column(
@@ -73,6 +68,12 @@ fun AlerteScreen(viewModel: MainViewModel, onBack: () -> Unit) {
             }
             Text("Alerte", style = MaterialTheme.typography.titleLarge, color = RelayPalette.Blanc)
         }
+        if (nouveau) {
+            DialogueNouveauType(
+                onCreer = { n, d -> viewModel.ajouterTypeAlerte(n, d); nouveau = false },
+                onAnnuler = { nouveau = false }
+            )
+        }
         AnimatedContent(
             targetState = suivi,
             transitionSpec = { fadeIn(tween(300)) togetherWith fadeOut(tween(200)) },
@@ -83,11 +84,16 @@ fun AlerteScreen(viewModel: MainViewModel, onBack: () -> Unit) {
                     type = type,
                     onType = { type = it },
                     nombreContacts = contacts.size,
-                    onDiffuser = { suivi = viewModel.diffuserAlerte(type.nom) }
+                    types = types,
+                    precision = precision,
+                    onPrecision = { precision = it.take(80) },
+                    onNouveau = { nouveau = true },
+                    onSupprimer = { t -> viewModel.supprimerTypeAlerte(t.nom); if (type == t) type = types[0] },
+                    onDiffuser = { suivi = viewModel.diffuserAlerte(type.nom, precision) }
                 )
             } else {
                 Diffusee(
-                    type = type.nom,
+                    type = type.nom + precision.trim().takeIf { it.isNotEmpty() }?.let { " — $it" }.orEmpty(),
                     suivi = s,
                     remise = remember(s) { viewModel.remiseAlerte(s) }.collectAsState(emptyMap()).value,
                     noms = contacts.associate { it.shortId to it.displayName },
@@ -99,13 +105,43 @@ fun AlerteScreen(viewModel: MainViewModel, onBack: () -> Unit) {
     }
 }
 
+@Composable
+private fun DialogueNouveauType(onCreer: (String, String) -> Unit, onAnnuler: () -> Unit) {
+    var nom by remember { mutableStateOf("") }
+    var detail by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onAnnuler,
+        title = { Text("Nouveau type d'alerte") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(value = nom, onValueChange = { nom = it.take(30) }, singleLine = true,
+                    label = { Text("Nom (ex. : Inondation)") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = detail, onValueChange = { detail = it.take(60) }, singleLine = true,
+                    label = { Text("Précision (facultatif)") }, modifier = Modifier.fillMaxWidth())
+            }
+        },
+        confirmButton = { TextButton(onClick = { onCreer(nom, detail) }, enabled = nom.isNotBlank()) { Text("Créer") } },
+        dismissButton = { TextButton(onClick = onAnnuler) { Text("Annuler") } }
+    )
+}
+
 private object AlerteTexte {
     val Doux = androidx.compose.ui.graphics.Color(0xFFF3D6D2)
     val Discret = androidx.compose.ui.graphics.Color(0xFFD9B8B4)
 }
 
 @Composable
-private fun Preparation(type: TypeAlerte, onType: (TypeAlerte) -> Unit, nombreContacts: Int, onDiffuser: () -> Unit) {
+private fun Preparation(
+    type: TypeAlerte,
+    onType: (TypeAlerte) -> Unit,
+    nombreContacts: Int,
+    types: List<TypeAlerte>,
+    precision: String,
+    onPrecision: (String) -> Unit,
+    onNouveau: () -> Unit,
+    onSupprimer: (TypeAlerte) -> Unit,
+    onDiffuser: () -> Unit,
+) {
     val anime = animationsActivees()
     val haptique = LocalHapticFeedback.current
     val portee = rememberCoroutineScope()
@@ -119,7 +155,7 @@ private fun Preparation(type: TypeAlerte, onType: (TypeAlerte) -> Unit, nombreCo
 
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
         Column(Modifier.padding(horizontal = 20.dp).selectableGroup(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            TYPES.forEach { t ->
+            types.forEach { t ->
                 val choisi = t == type
                 Row(
                     Modifier
@@ -137,12 +173,35 @@ private fun Preparation(type: TypeAlerte, onType: (TypeAlerte) -> Unit, nombreCo
                     ) {
                         if (choisi) Box(Modifier.size(9.dp).background(RelayPalette.AlerteCorail, CircleShape))
                     }
-                    Column {
+                    Column(Modifier.weight(1f)) {
                         Text(t.nom, style = MaterialTheme.typography.titleMedium, color = RelayPalette.Blanc)
-                        Text(t.detail, style = MaterialTheme.typography.bodySmall, color = AlerteTexte.Discret)
+                        if (t.detail.isNotEmpty()) Text(t.detail, style = MaterialTheme.typography.bodySmall, color = AlerteTexte.Discret)
+                    }
+                    if (t.personnalise) {
+                        TextButton(onClick = { onSupprimer(t) }) {
+                            Text("Retirer", style = MaterialTheme.typography.labelMedium, color = AlerteTexte.Discret)
+                        }
                     }
                 }
             }
+            TextButton(onClick = onNouveau, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text("+ Nouveau type d'alerte", style = MaterialTheme.typography.labelLarge, color = RelayPalette.AlerteCorail)
+            }
+            OutlinedTextField(
+                value = precision,
+                onValueChange = onPrecision,
+                singleLine = true,
+                label = { Text("Précision (facultatif)") },
+                placeholder = { Text("Ex. : au carrefour de l'école") },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = RelayPalette.Blanc, unfocusedTextColor = RelayPalette.Blanc,
+                    focusedBorderColor = RelayPalette.AlerteCorail, unfocusedBorderColor = RelayPalette.Blanc.copy(alpha = 0.25f),
+                    focusedLabelColor = RelayPalette.AlerteCorail, unfocusedLabelColor = AlerteTexte.Discret,
+                    focusedPlaceholderColor = AlerteTexte.Discret, unfocusedPlaceholderColor = AlerteTexte.Discret,
+                    cursorColor = RelayPalette.AlerteCorail
+                ),
+                modifier = Modifier.fillMaxWidth()
+            )
         }
 
         Box(Modifier.padding(top = 36.dp).size(224.dp), contentAlignment = Alignment.Center) {
