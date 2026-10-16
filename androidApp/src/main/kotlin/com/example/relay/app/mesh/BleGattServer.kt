@@ -3,7 +3,6 @@ package com.relay.app.mesh
 import android.bluetooth.*
 import android.content.Context
 import android.util.Log
-import com.relay.app.model.PacketCodec
 import java.util.UUID
 
 /**
@@ -29,7 +28,7 @@ class BleGattServer(private val context: Context) {
     private var gattServer: BluetoothGattServer? = null
 
     // Buffer d'assemblage pour les paquets fragmentés
-    private val fragmentBuffers = mutableMapOf<String, ByteArray>()
+    private val reassembleur = Reassembleur()
 
     // Callback quand un paquet complet est reçu
     var onPacketReceived: ((ByteArray) -> Unit)? = null
@@ -46,7 +45,7 @@ class BleGattServer(private val context: Context) {
                     Log.d(TAG, "Pair connecté : ${device.address}")
                 BluetoothProfile.STATE_DISCONNECTED -> {
                     Log.d(TAG, "Pair déconnecté : ${device.address}")
-                    fragmentBuffers.remove(device.address)
+                    reassembleur.oublier(device.address)
                 }
             }
         }
@@ -60,26 +59,17 @@ class BleGattServer(private val context: Context) {
             offset: Int,
             value: ByteArray
         ) {
-            if (characteristic.uuid != RELAY_PACKET_CHAR_UUID) return
-
-            // Accumule les fragments jusqu'à la taille annoncée par l'en-tête
-            val existing = fragmentBuffers[device.address] ?: ByteArray(0)
-            val combined = existing + value
-            fragmentBuffers[device.address] = combined
-
-            if (combined.size >= PacketCodec.TAILLE_EN_TETE) {
-                val attendue = PacketCodec.tailleAnnoncee(combined)
-                when {
-                    // En-tête invalide ou paquet plus long qu'annoncé : on jette
-                    attendue == null || combined.size > attendue -> {
-                        Log.w(TAG, "Fragments rejetés de ${device.address}")
-                        fragmentBuffers.remove(device.address)
-                    }
-                    combined.size == attendue -> {
-                        onPacketReceived?.invoke(combined)
-                        fragmentBuffers.remove(device.address)
-                    }
+            if (characteristic.uuid != RELAY_PACKET_CHAR_UUID) {
+                // Répondre quand même, sinon le client attend jusqu'à son délai maximal
+                if (responseNeeded) {
+                    gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_FAILURE, 0, null)
                 }
+                return
+            }
+
+            // Rassemble les fragments jusqu'à la taille annoncée par l'en-tête
+            reassembleur.ajouter(device.address, value)?.let { paquet ->
+                onPacketReceived?.invoke(paquet)
             }
 
             if (responseNeeded) {
