@@ -39,7 +39,12 @@ class MeshService : Service() {
         const val ACTION_BATTERY_CHANGED = "com.relay.app.BATTERY_CHANGED"
     }
 
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    // Une erreur dans une tâche du service est journalisée, elle ne doit
+    // jamais fermer l'application
+    private val gardien = CoroutineExceptionHandler { _, e -> Log.e(TAG, "Erreur dans le service mesh", e) }
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob() + gardien)
+    /** Terminé quand l'identité et le store Signal sont chargés. */
+    private val pret = CompletableDeferred<Unit>()
     private lateinit var repo: RelayRepository
     private lateinit var advertiser: BleAdvertiser
     private lateinit var scanner: BleScanner
@@ -54,8 +59,10 @@ class MeshService : Service() {
     private val peers = mutableMapOf<String, String>() // shortId → MAC
 
     // Identité chargée depuis Room — persistante entre redémarrages
-    private var localIdentity =
-        org.signal.libsignal.protocol.IdentityKeyPair(ByteArray(0))
+    // Chargée depuis Room au démarrage. Avant : IdentityKeyPair(ByteArray(0)),
+    // qui levait une exception à la création du service et faisait planter
+    // l'application à chaque lancement.
+    private lateinit var localIdentity: org.signal.libsignal.protocol.IdentityKeyPair
     private var localShortId = ""
 
     // Store Signal unique et persistant : publie nos clés ET déchiffre
@@ -108,9 +115,23 @@ class MeshService : Service() {
             setupScanner()
             setupGattServer()
 
-            advertiser.start(localShortId)
-            scanner.start()
-            gattServer.start()
+            pret.complete(Unit)
+
+            val bluetooth = (getSystemService(BLUETOOTH_SERVICE) as android.bluetooth.BluetoothManager).adapter
+            if (bluetooth == null || !bluetooth.isEnabled) {
+                updateNotification("Bluetooth désactivé — activez-le pour relayer")
+                Log.w(TAG, "Bluetooth absent ou désactivé : mesh en attente")
+                return@launch
+            }
+            try {
+                advertiser.start(localShortId)
+                scanner.start()
+                gattServer.start()
+            } catch (e: SecurityException) {
+                updateNotification("Autorisations Bluetooth manquantes")
+                Log.e(TAG, "Autorisations Bluetooth manquantes", e)
+                return@launch
+            }
 
             updateNotification("Mesh actif — $localShortId")
             Log.d(TAG, "MeshService prêt — $localShortId")
@@ -186,6 +207,7 @@ class MeshService : Service() {
      */
     private fun sendMessage(recipientId: String, plaintext: String) {
         scope.launch {
+            pret.await()
             try {
                 val store = signalStore
                 val recipientAddress = SignalProtocolAddress(recipientId, 1)

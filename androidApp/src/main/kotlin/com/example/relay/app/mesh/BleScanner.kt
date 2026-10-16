@@ -51,7 +51,10 @@ class BleScanner(private val context: Context) {
     fun start() {
         val manager = context.getSystemService(Context.BLUETOOTH_SERVICE)
                 as BluetoothManager
-        scanner = manager.adapter.bluetoothLeScanner
+        // Pas d'adaptateur (appareil sans Bluetooth) ou Bluetooth éteint : rien à faire
+        val adaptateur = manager.adapter ?: return
+        if (!adaptateur.isEnabled) return
+        scanner = adaptateur.bluetoothLeScanner
 
         // Filtre — uniquement les appareils Relay
         val filter = ScanFilter.Builder()

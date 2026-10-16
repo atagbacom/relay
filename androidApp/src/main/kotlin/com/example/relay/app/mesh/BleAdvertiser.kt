@@ -50,7 +50,10 @@ class BleAdvertiser(private val context: Context) {
     fun start(shortId: String) {
         val manager = context.getSystemService(Context.BLUETOOTH_SERVICE)
                 as BluetoothManager
-        advertiser = manager.adapter.bluetoothLeAdvertiser
+        // Pas d'adaptateur (appareil sans Bluetooth) ou Bluetooth éteint : rien à faire
+        val adaptateur = manager.adapter ?: return
+        if (!adaptateur.isEnabled) return
+        advertiser = adaptateur.bluetoothLeAdvertiser
 
         val settings = AdvertiseSettings.Builder()
             .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
@@ -62,13 +65,19 @@ class BleAdvertiser(private val context: Context) {
         // Encode shortId dans le manufacturer data (2 bytes company ID + payload)
         val shortIdBytes = shortId.toByteArray(Charsets.UTF_8)
 
+        // Une annonce BLE tient en 31 octets : l'UUID 128 bits (18) et les
+        // drapeaux (3) les occupent presque. L'identifiant court part dans la
+        // réponse au scan, lue par les scanners actifs avec l'annonce.
         val data = AdvertiseData.Builder()
             .addServiceUuid(ParcelUuid(RELAY_SERVICE_UUID))
-            .addManufacturerData(0x1234, shortIdBytes)
             .setIncludeDeviceName(false)   // Pas de nom — confidentialité
             .build()
+        val reponse = AdvertiseData.Builder()
+            .addManufacturerData(0x1234, shortIdBytes)
+            .setIncludeDeviceName(false)
+            .build()
 
-        advertiser?.startAdvertising(settings, data, callback)
+        advertiser?.startAdvertising(settings, data, reponse, callback)
     }
 
     fun stop() {

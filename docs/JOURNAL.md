@@ -170,6 +170,25 @@ Chaque entrée suit le même schéma : **constat**, **cause**, **solution**, **l
 
 > **Leçon.** Refaire un écran oblige à relire son code : la moitié des défauts de cette phase ont été trouvés en redessinant.
 
+
+### 13. Premier essai sur un vrai téléphone : plantage au lancement
+
+- **Constat.** Sur Android, l'installation directe de l'APK échouait (il a fallu passer par Xender), puis l'application s'arrêtait à chaque ouverture.
+- **Causes trouvées dans le code.**
+  - le service mesh initialisait son identité avec `IdentityKeyPair(ByteArray(0))` : exception à la création du service, donc plantage dès que les permissions étaient accordées ;
+  - une erreur dans n'importe quelle tâche du service fermait toute l'application ;
+  - Bluetooth absent ou éteint : l'adaptateur était utilisé sans vérification ;
+  - l'annonce Bluetooth dépassait la limite de 31 octets : elle ne pouvait jamais partir, les téléphones ne se seraient jamais trouvés ;
+  - chaque exécution de CI signait l'APK avec une clé de débogage différente : Android refuse alors d'installer par-dessus la version précédente.
+- **Solution.**
+  - identité chargée avant usage, erreurs du service journalisées sans fermer l'application, envoi qui attend que le service soit prêt ;
+  - Bluetooth vérifié, identifiant court déplacé dans la réponse au scan ;
+  - clé de débogage fixe versionnée ;
+  - rapport de plantage dans l'application, affiché à la réouverture avec un bouton de partage ;
+  - **test de démarrage sur émulateur dans la CI** : installation avec permissions, lancement, recherche de plantage dans le journal Android.
+
+> **Leçon.** Compiler et tester la logique ne suffit pas : il faut lancer l'application. Un test de démarrage automatique aurait attrapé ce plantage avant qu'il n'arrive sur un téléphone.
+
 ---
 
 ## Points ouverts

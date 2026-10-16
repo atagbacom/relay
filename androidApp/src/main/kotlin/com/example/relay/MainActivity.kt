@@ -47,9 +47,17 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         enableEdgeToEdge()
+        val fichierPlantage = RelayApplication.rapport(application)
+        val dernierPlantage = fichierPlantage.takeIf { it.exists() }?.readText()
         setContent {
             RelayTheme {
-                RelayApp(viewModel)
+                var rapport by remember { mutableStateOf(dernierPlantage) }
+                val r = rapport
+                if (r != null) {
+                    RapportPlantageScreen(r, onContinuer = { fichierPlantage.delete(); rapport = null })
+                } else {
+                    RelayApp(viewModel)
+                }
             }
         }
 
