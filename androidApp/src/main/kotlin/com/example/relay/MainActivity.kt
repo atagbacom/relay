@@ -13,6 +13,7 @@ import androidx.compose.runtime.*
 import androidx.core.content.ContextCompat
 import com.relay.app.mesh.MeshService
 import com.relay.app.ui.*
+import com.relay.app.ui.theme.RelayTheme
 
 class MainActivity : ComponentActivity() {
 
@@ -38,7 +39,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         setContent {
-            RelayApp(viewModel)
+            RelayTheme {
+                RelayApp(viewModel)
+            }
         }
 
         if (permissions.all {
