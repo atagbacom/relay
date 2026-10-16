@@ -66,3 +66,7 @@ La compilation et les tests se font **dans la CI GitHub Actions** (`.github/work
 Pour installer l'APK téléchargé sur un téléphone branché : `adb install relay-debug.apk`.
 
 Le mesh BLE nécessite du matériel Bluetooth réel : pour tester les échanges entre pairs, installez l'application sur au moins deux appareils physiques (un émulateur ne dispose pas de radio BLE fonctionnelle). Au premier lancement, l'application demande les permissions Bluetooth, localisation et caméra nécessaires au scan BLE et au scan de QR code.
+
+## Journal du projet
+
+Les étapes, problèmes rencontrés et solutions retenues sont tenus dans [docs/JOURNAL.md](docs/JOURNAL.md).
