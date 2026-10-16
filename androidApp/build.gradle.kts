@@ -74,7 +74,8 @@ android {
         }
     }
     defaultConfig {
-        applicationId = "com.example.relay"
+        // Identifiant définitif : le changer après une distribution empêcherait les mises à jour
+        applicationId = "com.atagba.relay"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 1
