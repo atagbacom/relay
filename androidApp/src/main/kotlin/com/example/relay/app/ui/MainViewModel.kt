@@ -13,6 +13,7 @@ import com.relay.app.crypto.Empreinte
 import com.relay.app.crypto.QrKeyExchange
 import com.relay.app.crypto.TrustLevel
 import com.relay.app.mesh.BatteryMonitor
+import com.relay.app.mesh.EtatMesh
 import com.relay.app.mesh.MeshService
 import com.relay.app.model.RelayContact
 import com.relay.app.repository.RelayRepository
@@ -30,8 +31,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val empreinte = MutableStateFlow("")
     private var identite: org.signal.libsignal.protocol.IdentityKeyPair? = null
     val peerCount = MutableStateFlow(0)
-    /** Identifiants courts des appareils à portée Bluetooth directe. */
-    val peers = MutableStateFlow<List<String>>(emptyList())
+    /** Identifiants courts des appareils à portée Bluetooth directe, lus dans l'état du service. */
+    val peers: StateFlow<List<String>> = EtatMesh.pairs
+        .map { liste -> liste.map { it.shortId } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val batteryLevel = MutableStateFlow(100)
     val batteryMode = MutableStateFlow("FULL")
 
@@ -61,7 +64,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 MeshService.ACTION_PEER_COUNT_CHANGED -> {
                     peerCount.value = intent.getIntExtra("count", 0)
-                    peers.value = intent.getStringArrayExtra("peers")?.toList() ?: emptyList()
                 }
                 MeshService.ACTION_BATTERY_CHANGED -> {
                     batteryLevel.value = intent.getIntExtra("level", 100)

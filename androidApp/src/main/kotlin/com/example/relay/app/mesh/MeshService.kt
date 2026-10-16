@@ -25,6 +25,8 @@ class MeshService : Service() {
         const val CHANNEL_ID = "relay_mesh"
         const val NOTIF_ID = 1
         const val ACTION_SEND = "com.relay.app.SEND"
+        /** Relance l'annonce, le scan et le serveur Bluetooth (écran de diagnostic). */
+        const val ACTION_RELANCER = "com.relay.app.RELANCER"
         const val EXTRA_RECIPIENT_ID = "recipient_id"
         const val EXTRA_MESSAGE = "message"
         private const val TAG = "MeshService"
@@ -116,25 +118,23 @@ class MeshService : Service() {
             setupGattServer()
 
             pret.complete(Unit)
+            EtatMesh.identifiant.value = localShortId
+            EtatMesh.noter("Service prêt, identifiant $localShortId")
 
-            val bluetooth = (getSystemService(BLUETOOTH_SERVICE) as android.bluetooth.BluetoothManager).adapter
-            if (bluetooth == null || !bluetooth.isEnabled) {
-                updateNotification("Bluetooth désactivé — activez-le pour relayer")
-                Log.w(TAG, "Bluetooth absent ou désactivé : mesh en attente")
-                return@launch
-            }
-            try {
-                advertiser.start(localShortId)
-                scanner.start()
-                gattServer.start()
-            } catch (e: SecurityException) {
-                updateNotification("Autorisations Bluetooth manquantes")
-                Log.e(TAG, "Autorisations Bluetooth manquantes", e)
-                return@launch
-            }
+            // Rallumer le Bluetooth relance le mesh (avant : il restait
+            // éteint jusqu'au redémarrage du téléphone)
+            registerReceiver(etatBluetooth, android.content.IntentFilter(android.bluetooth.BluetoothAdapter.ACTION_STATE_CHANGED))
+            demarrerBle()
 
-            updateNotification("Mesh actif — $localShortId")
-            Log.d(TAG, "MeshService prêt — $localShortId")
+            // L'interface lit les appareils vus directement, rafraîchis toutes les 5 s
+            scope.launch {
+                while (isActive) {
+                    EtatMesh.majPairs(nodeTracker.getActiveNodes().map {
+                        EtatMesh.PairVu(it.shortId, it.macAddress, it.rssi, it.lastSeenAt)
+                    })
+                    delay(5_000)
+                }
+            }
             scope.launch {
                 while (isActive) {
                     delay(600_000)
@@ -143,6 +143,52 @@ class MeshService : Service() {
                 }
             }
         }
+    }
+
+    // ─── Bluetooth ───────────────────────────────────────────
+
+    private val etatBluetooth = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context, intent: Intent) {
+            when (intent.getIntExtra(android.bluetooth.BluetoothAdapter.EXTRA_STATE, -1)) {
+                android.bluetooth.BluetoothAdapter.STATE_ON -> {
+                    EtatMesh.noter("Bluetooth rallumé : relance du mesh")
+                    scope.launch { demarrerBle() }
+                }
+                android.bluetooth.BluetoothAdapter.STATE_OFF -> {
+                    EtatMesh.noter("Bluetooth éteint : mesh en attente")
+                    arreterBle()
+                    EtatMesh.bluetoothActif.value = false
+                    updateNotification("Bluetooth désactivé — activez-le pour relayer")
+                }
+            }
+        }
+    }
+
+    /** (Re)démarre annonce, scan et serveur. Sans effet si le Bluetooth est éteint. */
+    private fun demarrerBle() {
+        val bluetooth = (getSystemService(BLUETOOTH_SERVICE) as android.bluetooth.BluetoothManager).adapter
+        if (bluetooth == null || !bluetooth.isEnabled) {
+            EtatMesh.bluetoothActif.value = bluetooth != null && bluetooth.isEnabled
+            updateNotification("Bluetooth désactivé — activez-le pour relayer")
+            EtatMesh.noter(if (bluetooth == null) "Pas de Bluetooth sur ce téléphone" else "Bluetooth éteint : mesh en attente")
+            return
+        }
+        EtatMesh.bluetoothActif.value = true
+        try {
+            gattServer.start()
+            advertiser.start(localShortId)
+            scanner.start()
+            updateNotification("Mesh actif — $localShortId")
+        } catch (e: SecurityException) {
+            updateNotification("Autorisations Bluetooth manquantes")
+            EtatMesh.noter("Autorisations Bluetooth manquantes : ${e.message}")
+        }
+    }
+
+    private fun arreterBle() {
+        if (::advertiser.isInitialized) advertiser.stop()
+        if (::scanner.isInitialized) scanner.stop()
+        if (::gattServer.isInitialized) gattServer.stop()
     }
 
     // ─── Setup callbacks ─────────────────────────────────────
@@ -178,7 +224,7 @@ class MeshService : Service() {
                 peers[shortId] = address
 
                 if (isNew) {
-                    Log.d(TAG, "Nouveau pair : $shortId")
+                    EtatMesh.noter("Appareil Relay découvert : $shortId (signal $rssi dBm)")
                     router.onNewPeerAvailable(shortId, address)
                     scope.launch { sendOurPreKeys(address) }
                     updateNotification(
@@ -437,12 +483,19 @@ class MeshService : Service() {
                 val message = intent.getStringExtra(EXTRA_MESSAGE) ?: return START_STICKY
                 sendMessage(recipientId, message)
             }
+            ACTION_RELANCER -> scope.launch {
+                pret.await()
+                EtatMesh.noter("Relance du mesh demandée")
+                arreterBle()
+                demarrerBle()
+            }
         }
         return START_STICKY
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        runCatching { unregisterReceiver(etatBluetooth) }
         if (::advertiser.isInitialized) advertiser.stop()
         if (::scanner.isInitialized) scanner.stop()
         if (::gattServer.isInitialized) gattServer.stop()

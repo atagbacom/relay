@@ -33,12 +33,15 @@ class BleAdvertiser(private val context: Context) {
 
     private val callback = object : AdvertiseCallback() {
         override fun onStartSuccess(settingsInEffect: AdvertiseSettings) {
-            Log.d(TAG, "Advertising démarré")
             isAdvertising = true
+            EtatMesh.annonce.value = "active"
+            EtatMesh.noter("Annonce Bluetooth active")
         }
         override fun onStartFailure(errorCode: Int) {
-            Log.e(TAG, "Advertising échoué : $errorCode")
             isAdvertising = false
+            val raison = EtatMesh.echecAnnonce(errorCode)
+            EtatMesh.annonce.value = "échec : $raison"
+            EtatMesh.noter("Annonce Bluetooth impossible : $raison")
         }
     }
 
@@ -54,6 +57,12 @@ class BleAdvertiser(private val context: Context) {
         val adaptateur = manager.adapter ?: return
         if (!adaptateur.isEnabled) return
         advertiser = adaptateur.bluetoothLeAdvertiser
+        if (advertiser == null) {
+            EtatMesh.annonce.value = "échec : ce téléphone ne sait pas émettre d'annonce Bluetooth"
+            EtatMesh.noter("Pas d'émetteur d'annonce BLE sur ce téléphone")
+            return
+        }
+        stop()
 
         val settings = AdvertiseSettings.Builder()
             .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
@@ -82,8 +91,9 @@ class BleAdvertiser(private val context: Context) {
 
     fun stop() {
         if (isAdvertising) {
-            advertiser?.stopAdvertising(callback)
+            runCatching { advertiser?.stopAdvertising(callback) }
             isAdvertising = false
+            EtatMesh.annonce.value = "arrêtée"
         }
     }
 }

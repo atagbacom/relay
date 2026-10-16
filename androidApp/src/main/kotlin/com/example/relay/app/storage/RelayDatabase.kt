@@ -68,6 +68,10 @@ interface IdentityDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun save(identity: IdentityEntity)
+
+    /** N'écrase jamais une identité existante. */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIfAbsent(identity: IdentityEntity): Long
 }
 
 @Dao

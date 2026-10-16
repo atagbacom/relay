@@ -37,6 +37,7 @@ fun ReseauScreen(
     viewModel: MainViewModel,
     onOuvrirConversation: (String) -> Unit,
     onVerifier: () -> Unit,
+    onReglages: () -> Unit = {},
 ) {
     val contacts by viewModel.contacts.collectAsState(emptyList())
     val peers by viewModel.peers.collectAsState()
@@ -75,7 +76,7 @@ fun ReseauScreen(
         ) {
             LignesTopographiques(Modifier.matchParentSize())
             Column(Modifier.statusBarsPadding().padding(bottom = 36.dp)) {
-                EnTete(batterie, mode)
+                EnTete(batterie, mode, onReglages)
                 RadarReseau(
                     noeuds = noeuds,
                     selection = selection,
@@ -171,7 +172,7 @@ fun ReseauScreen(
 }
 
 @Composable
-private fun EnTete(batterie: Int, mode: String) {
+private fun EnTete(batterie: Int, mode: String, onReglages: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().padding(start = 22.dp, end = 22.dp, top = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -198,6 +199,9 @@ private fun EnTete(batterie: Int, mode: String) {
         ) {
             Icon(Icones.Batterie, contentDescription = null, tint = RelayPalette.BleuBrume, modifier = Modifier.size(18.dp))
             Text("$batterie % · $libelleMode", color = RelayPalette.BleuBrume, style = MaterialTheme.typography.labelMedium)
+        }
+        IconButton(onClick = onReglages) {
+            Icon(Icones.Reglages, contentDescription = "Réglages et diagnostic", tint = RelayPalette.BleuBrume)
         }
     }
 }

@@ -84,7 +84,13 @@ class BleGattServer(private val context: Context) {
     fun start() {
         val manager = context.getSystemService(Context.BLUETOOTH_SERVICE)
                 as BluetoothManager
+        stop()
         gattServer = manager.openGattServer(context, serverCallback)
+        if (gattServer == null) {
+            EtatMesh.serveur.value = "échec : serveur GATT indisponible"
+            EtatMesh.noter("Serveur GATT impossible à ouvrir")
+            return
+        }
 
         val service = BluetoothGattService(
             BleAdvertiser.RELAY_SERVICE_UUID,
@@ -100,10 +106,13 @@ class BleGattServer(private val context: Context) {
 
         service.addCharacteristic(packetChar)
         gattServer?.addService(service)
-        Log.d(TAG, "Serveur GATT démarré")
+        EtatMesh.serveur.value = "actif"
+        EtatMesh.noter("Serveur GATT actif")
     }
 
     fun stop() {
-        gattServer?.close()
+        runCatching { gattServer?.close() }
+        gattServer = null
+        EtatMesh.serveur.value = "arrêté"
     }
 }

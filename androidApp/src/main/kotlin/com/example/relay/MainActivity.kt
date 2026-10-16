@@ -85,6 +85,7 @@ sealed class Screen {
     data class Fiche(val contactId: String) : Screen()
     object Qr : Screen()
     object Alerte : Screen()
+    object Diagnostic : Screen()
 }
 
 @Composable
@@ -119,7 +120,13 @@ fun RelayApp(viewModel: MainViewModel) {
                 is Screen.Reseau -> ReseauScreen(
                     viewModel = viewModel,
                     onOuvrirConversation = { screen = Screen.Conversation(it) },
-                    onVerifier = { versOnglet(Onglet.VERIFIER) }
+                    onVerifier = { versOnglet(Onglet.VERIFIER) },
+                    onReglages = { screen = Screen.Diagnostic }
+                )
+
+                is Screen.Diagnostic -> DiagnosticScreen(
+                    viewModel = viewModel,
+                    onBack = { screen = Screen.Reseau }
                 )
 
                 is Screen.Messages -> MessagesScreen(
