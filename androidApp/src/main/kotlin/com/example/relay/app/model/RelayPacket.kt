@@ -40,5 +40,6 @@ enum class PacketType {
     MESSAGE,          // Message chiffré Double Ratchet
     PREKEY_GOSSIP,    // Bundle de prekeys signé pour propagation
     DEFERRED_INIT,    // Initiation de session différée
-    ACK               // Accusé de réception
+    ACK,              // Accusé de réception
+    VERIFICATION      // Vérification en personne : clé de celui qui vient de scanner notre QR
 }

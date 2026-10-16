@@ -167,6 +167,9 @@ fun RelayApp(viewModel: MainViewModel, contactAOuvrir: MutableState<String?> = m
         }
     }
 
+    // Quelqu'un vient de scanner notre code : comparer les mots, où qu'on soit
+    VerificationRecueDialogue(viewModel)
+
     val avecBarre = screen is Screen.Reseau || screen is Screen.Messages
     Scaffold(
         bottomBar = { if (avecBarre) BarreNavigation(onglet, ::versOnglet) },

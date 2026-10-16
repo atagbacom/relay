@@ -38,6 +38,28 @@ object Notifications {
      * Le contenu n'apparaît pas sur l'écran verrouillé : seulement « Nouveau
      * message chiffré ». Toucher la notification ouvre la conversation.
      */
+    /** Quelqu'un vient de nous vérifier : ouvrir l'application pour comparer les mots. */
+    @SuppressLint("MissingPermission")
+    fun verification(context: Context, contactId: String, nom: String) {
+        val nmc = NotificationManagerCompat.from(context)
+        if (!nmc.areNotificationsEnabled()) return
+        val ouvrir = PendingIntent.getActivity(
+            context, 7,
+            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notif = NotificationCompat.Builder(context, CANAL_MESSAGES)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setColor(0xFF13294B.toInt())
+            .setContentTitle("$nom vient de vous vérifier")
+            .setContentText("Ouvrez Relay et comparez les quatre mots ensemble.")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(ouvrir)
+            .setAutoCancel(true)
+            .build()
+        nmc.notify(("verif" + contactId).hashCode(), notif)
+    }
+
     @SuppressLint("MissingPermission") // vérifié par areNotificationsEnabled()
     fun message(context: Context, contactId: String, nom: String, texte: String) {
         val nmc = NotificationManagerCompat.from(context)

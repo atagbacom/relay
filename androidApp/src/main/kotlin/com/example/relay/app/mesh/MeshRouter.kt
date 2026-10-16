@@ -31,6 +31,8 @@ class MeshRouter(
     var onAckReceived: ((String) -> Unit)? = null
     /** Un message pour nous arrive une seconde fois : l'expéditeur n'a pas eu l'accusé, le renvoyer. */
     var onDoublonPourNous: ((RelayPacket) -> Unit)? = null
+    /** Quelqu'un vient de scanner notre QR et nous envoie sa clé. */
+    var onVerification: ((RelayPacket) -> Unit)? = null
 
     /**
      * Paquets destinés à d'autres, gardés en phase Wait jusqu'à ce que leur
@@ -47,7 +49,7 @@ class MeshRouter(
         // ── Déduplication ──────────────────────────────────
         if (bloom.mightContain(packet.id)) {
             Log.v("MeshRouter", "Paquet déjà vu : ${packet.id.take(8)}")
-            if (packet.type == PacketType.MESSAGE && packet.recipientId == localShortId) {
+            if ((packet.type == PacketType.MESSAGE || packet.type == PacketType.VERIFICATION) && packet.recipientId == localShortId) {
                 onDoublonPourNous?.invoke(packet)
             }
             return
@@ -72,6 +74,9 @@ class MeshRouter(
             PacketType.PREKEY_GOSSIP -> handleGossip(packet)
             PacketType.DEFERRED_INIT -> handleDeferred(packet)
             PacketType.ACK           -> handleAck(packet)
+            // Pour nous : à vérifier ; sinon acheminé comme un message
+            PacketType.VERIFICATION  ->
+                if (packet.recipientId == localShortId) onVerification?.invoke(packet) else handleMessage(packet)
         }
     }
 
