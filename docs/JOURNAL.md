@@ -242,6 +242,18 @@ Chaque entrée suit le même schéma : **constat**, **cause**, **solution**, **l
 
 > **Leçon.** Un essai réel, même à deux téléphones, révèle en une heure ce que des semaines de lecture de code ne montrent pas. Et un écran de diagnostic transforme « ça ne marche pas » en un chiffre qui désigne la cause.
 
+
+### 17. Vérification en personne avec un seul scan
+
+- **Constat.** Le scan d'un QR ne va que dans un sens : A connaît B, mais B ne sait même pas qu'il a été scanné. Il fallait que chacun scanne l'autre.
+- **Solution.**
+  - le QR contient un code à usage unique (valable 5 minutes, une seule fois) ;
+  - après le scan, le téléphone de A envoie à B, par le mesh, sa clé signée avec ce code : B sait que l'envoi vient de quelqu'un qui vient de scanner *son* code ;
+  - B vérifie la signature, que la clé correspond à l'identifiant, et le code ; puis les deux comparent les quatre mots à voix haute ; si B confirme, A devient « vérifié en personne » chez B aussi ;
+  - un paquet refusé ne consomme pas le code ; tests de l'aller-retour, du code à usage unique, de l'usurpation et du contenu modifié.
+
+> **Leçon.** La sécurité ne doit pas se payer en effort : un seul scan, mais les mots gardent la garantie qu'on parle à la bonne personne.
+
 ---
 
 ## Points ouverts

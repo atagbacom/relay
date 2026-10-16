@@ -10,6 +10,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.relay.app.crypto.Empreinte
+import com.relay.app.crypto.VerificationMutuelle
 import com.relay.app.crypto.QrKeyExchange
 import com.relay.app.crypto.TrustLevel
 import com.relay.app.mesh.BatteryMonitor
@@ -99,11 +100,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun regenererQr() {
         val identity = identite ?: return
-        val payload = QrKeyExchange.generatePayload(identity, shortId.value)
+        val payload = QrKeyExchange.generatePayload(identity, shortId.value, VerificationMutuelle.Nonces.emettre())
         qrBitmap.value = QrKeyExchange.generateBitmap(payload)
     }
 
     /** Les quatre mots que les deux téléphones doivent afficher à l'identique. */
+    /** Mots identiques des deux côtés : celui qui nous a vérifiés devient « vérifié en personne ». */
+    fun confirmerVerification(recue: VerificationMutuelle.Recue) {
+        addGreenContact(QrKeyExchange.QrContact(recue.shortId, recue.cle), recue.nom)
+        EtatMesh.verificationRecue.value = null
+    }
+
+    fun refuserVerification() {
+        EtatMesh.verificationRecue.value = null
+    }
+
     fun motsDeSecurite(autre: org.signal.libsignal.protocol.IdentityKey): List<String> =
         identite?.let { Empreinte.motsDeSecurite(it.publicKey, autre) } ?: emptyList()
 
@@ -162,7 +173,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /**
      * Ajoute un contact au niveau GREEN après scan QR réussi.
      */
-    fun addGreenContact(qrContact: QrKeyExchange.QrContact) {
+    fun addGreenContact(qrContact: QrKeyExchange.QrContact, nom: String? = null) {
+        // Vérification à un seul scan : notre propre clé part vers celui qu'on vient de scanner
+        qrContact.nonce?.let { nonce ->
+            val i = Intent(getApplication(), MeshService::class.java).apply {
+                action = MeshService.ACTION_VERIFIER
+                putExtra(MeshService.EXTRA_RECIPIENT_ID, qrContact.shortId)
+                putExtra(MeshService.EXTRA_NONCE, nonce)
+            }
+            runCatching { getApplication<Application>().startService(i) }
+        }
         viewModelScope.launch {
             val existing = repo.getContact(qrContact.shortId)
             val contact = existing?.copy(
@@ -171,7 +191,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             ) ?: RelayContact(
                 shortId = qrContact.shortId,
                 publicKey = qrContact.publicKey,
-                trustLevel = TrustLevel.GREEN
+                trustLevel = TrustLevel.GREEN,
+                alias = nom
             )
             repo.saveContact(contact)
         }

@@ -34,6 +34,9 @@ object EtatMesh {
     val serveur = MutableStateFlow("pas démarré")
     val identifiant = MutableStateFlow("")
 
+    /** Quelqu'un vient de nous vérifier : l'interface demande de comparer les mots. */
+    val verificationRecue = MutableStateFlow<com.relay.app.crypto.VerificationMutuelle.Recue?>(null)
+
     private val _pairs = MutableStateFlow<List<PairVu>>(emptyList())
     val pairs: StateFlow<List<PairVu>> = _pairs
 

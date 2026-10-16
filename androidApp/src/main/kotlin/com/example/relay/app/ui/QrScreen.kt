@@ -445,7 +445,7 @@ private fun Verifie(identifiant: String, mots: List<String>, onEcrire: () -> Uni
                     .padding(16.dp)
             ) {
                 Text(
-                    "Dernière précaution : lisez ces mots à voix haute. Votre contact doit voir les mêmes.",
+                    "Lisez ces mots à voix haute. Votre contact les voit aussi sur son téléphone : s'ils sont identiques, il confirme, et vous êtes vérifiés tous les deux.",
                     style = MaterialTheme.typography.bodySmall, color = RelayPalette.BleuCiel
                 )
                 Spacer(Modifier.height(10.dp))

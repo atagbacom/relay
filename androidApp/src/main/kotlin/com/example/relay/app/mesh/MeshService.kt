@@ -28,6 +28,9 @@ class MeshService : Service() {
         const val ACTION_SEND = "com.relay.app.SEND"
         /** Relance l'annonce, le scan et le serveur Bluetooth (écran de diagnostic). */
         const val ACTION_RELANCER = "com.relay.app.RELANCER"
+        /** Après un scan : envoyer notre clé à celui qu'on vient de scanner. */
+        const val ACTION_VERIFIER = "com.relay.app.VERIFIER"
+        const val EXTRA_NONCE = "nonce"
         const val EXTRA_RECIPIENT_ID = "recipient_id"
         const val EXTRA_MESSAGE = "message"
         private const val TAG = "MeshService"
@@ -272,6 +275,11 @@ class MeshService : Service() {
             }
         }
 
+        // Quelqu'un vient de scanner notre QR et nous envoie sa clé
+        router.onVerification = { packet ->
+            scope.launch { recevoirVerification(packet) }
+        }
+
         // Message déjà reçu, renvoyé par l'expéditeur : son accusé s'est perdu
         router.onDoublonPourNous = { packet ->
             scope.launch { envoyerAck(packet) }
@@ -402,6 +410,46 @@ class MeshService : Service() {
         } catch (e: Exception) {
             Log.e(TAG, "Erreur déchiffrement : ${e.message}")
         }
+    }
+
+    // ─── Vérification en personne à un seul scan ────────────
+
+    /** Notre clé, signée, avec le code à usage unique lu dans le QR de l'autre. */
+    private fun envoyerVerification(destinataire: String, nonce: String) {
+        scope.launch {
+            pret.await()
+            val contenu = VerificationMutuelle.contenu(localIdentity, nonce, null)
+            val packet = RelayPacket(
+                id = UUID.randomUUID().toString(),
+                type = PacketType.VERIFICATION,
+                senderId = localShortId,
+                recipientId = destinataire,
+                payload = contenu,
+                signature = VerificationMutuelle.signer(localIdentity, contenu),
+                ttl = RelayPacket.MAX_HOPS
+            )
+            val octets = serializePacket(packet) ?: return@launch
+            repo.envois.enregistrer(
+                EnvoiEntity(id = packet.id, destinataire = destinataire, paquet = octets, creeA = System.currentTimeMillis())
+            )
+            EtatMesh.noter("Vérification envoyée à $destinataire")
+            relancerEnvois(force = true)
+        }
+    }
+
+    private suspend fun recevoirVerification(packet: RelayPacket) {
+        val recue = VerificationMutuelle.verifier(packet.senderId, packet.payload, packet.signature) {
+            VerificationMutuelle.Nonces.consommer(it)
+        }
+        if (recue == null) {
+            EtatMesh.noter("Vérification rejetée de ${packet.senderId} : signature, clé ou code invalide")
+            return
+        }
+        envoyerAck(packet)
+        EtatMesh.noter("${packet.senderId} vient de nous vérifier : comparaison des mots demandée")
+        EtatMesh.verificationRecue.value = recue
+        val nom = recue.nom ?: repo.getContact(recue.shortId)?.alias ?: "Appareil ${recue.shortId.takeLast(4).uppercase()}"
+        Notifications.verification(this, recue.shortId, nom)
     }
 
     /** Accusé de réception : directement à l'expéditeur s'il est à portée, sinon aux relais. */
@@ -539,6 +587,11 @@ class MeshService : Service() {
                 val recipientId = intent.getStringExtra(EXTRA_RECIPIENT_ID) ?: return START_STICKY
                 val message = intent.getStringExtra(EXTRA_MESSAGE) ?: return START_STICKY
                 sendMessage(recipientId, message)
+            }
+            ACTION_VERIFIER -> {
+                val dest = intent.getStringExtra(EXTRA_RECIPIENT_ID) ?: return START_STICKY
+                val nonce = intent.getStringExtra(EXTRA_NONCE) ?: return START_STICKY
+                envoyerVerification(dest, nonce)
             }
             ACTION_RELANCER -> scope.launch {
                 pret.await()
