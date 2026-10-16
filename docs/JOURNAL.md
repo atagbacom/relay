@@ -127,7 +127,24 @@ Chaque entrée suit le même schéma : **constat**, **cause**, **solution**, **l
 
 > **Leçon.** Isoler la logique pure du code matériel : elle devient testable en CI, même sans téléphone.
 
-### 11. Design : de l'esthétique « terminal » à un outil institutionnel
+### 11. L'APK pesait 157 Mo (#18)
+
+- **Constat.** L'APK de débogage produit par la CI pesait 157 Mo : inacceptable pour une messagerie destinée à des zones où les données coûtent cher.
+- **Causes** (inventaire des archives de libsignal 0.67) :
+  - `libsignal-android` (100 Mo) embarque, pour chaque architecture, une variante de test de sa bibliothèque native d'environ 50 Mo ;
+  - il tire `libsignal-client` (77 Mo), dont les bibliothèques natives pour Linux, macOS et Windows finissaient dans l'APK ;
+  - les architectures x86 (émulateurs) étaient incluses ;
+  - les bibliothèques natives étaient stockées non compressées dans l'APK.
+- **Solution.**
+  - exclusion des variantes de test et des bibliothèques pour ordinateur ;
+  - `libsignal-client` déclaré seulement pour les tests JVM ;
+  - un APK par architecture (arm64, armv7), plus un universel ;
+  - bibliothèques natives compressées ;
+  - taille des APK affichée dans le résumé de chaque exécution de CI.
+
+> **Leçon.** Mesurer la taille livrée dès le premier build : une dépendance peut embarquer dix fois plus que ce qu'on utilise.
+
+### 12. Design : de l'esthétique « terminal » à un outil institutionnel
 
 - **Constat.** Interface en police à chasse fixe, vert fluo sur noir, boutons entre crochets : lecture difficile en plein soleil, peu crédible pour une ONG ou la protection civile.
 - **Démarche.** Prototype interactif et animé en 5 écrans, validé avant tout code :
