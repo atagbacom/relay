@@ -3,7 +3,7 @@ name: Android
 # Toute compilation se fait ici, jamais sur un poste de développement.
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -30,6 +30,23 @@ jobs:
 
       - name: Compiler l'APK de débogage
         run: ./gradlew :androidApp:assembleDebug --stacktrace
+
+      - name: Taille des APK
+        run: |
+          {
+            echo "## Taille des APK"
+            echo
+            echo "| APK | Taille |"
+            echo "|---|---|"
+            for apk in androidApp/build/outputs/apk/debug/*.apk; do
+              echo "| $(basename "$apk") | $(du -h "$apk" | cut -f1) |"
+            done
+            echo
+            echo "Plus gros fichiers de l'APK universel :"
+            echo '```'
+            unzip -l androidApp/build/outputs/apk/debug/*universal*.apk | sort -k1 -n -r | head -12
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Tests unitaires
         run: ./gradlew :androidApp:testDebugUnitTest --stacktrace

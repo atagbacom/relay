@@ -23,8 +23,10 @@ dependencies {
     coreLibraryDesugaring(libs.desugar.jdk.libs)
 
     // Signal Protocol — crypto
+    // libsignal-android tire libsignal-client (API Java) ; les tests JVM
+    // utilisent les bibliothèques natives pour ordinateur de ce dernier
     implementation("org.signal:libsignal-android:0.67.0")
-    implementation("org.signal:libsignal-client:0.67.0")
+    testImplementation("org.signal:libsignal-client:0.67.0")
 
     // UI
     implementation("androidx.compose.ui:ui:1.8.2")
@@ -71,6 +73,26 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            // Bibliothèques natives pour ordinateur (Linux, macOS, Windows)
+            // embarquées par libsignal-client : inutiles sur un téléphone
+            excludes += listOf("libsignal_jni*.so", "libsignal_jni*.dylib", "signal_jni*.dll")
+        }
+        jniLibs {
+            // Variante de test de libsignal, ~50 Mo par architecture
+            excludes += "**/libsignal_jni_testing.so"
+            // Bibliothèques natives compressées dans l'APK : téléchargement
+            // bien plus léger (au prix d'une extraction à l'installation)
+            useLegacyPackaging = true
+        }
+    }
+    splits {
+        abi {
+            // Téléphones réels uniquement (x86 = émulateurs) ; un APK par
+            // architecture, plus un APK universel pour les deux
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a")
+            isUniversalApk = true
         }
     }
     buildTypes {
