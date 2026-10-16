@@ -79,7 +79,7 @@ class FragmentationTest {
     }
 
     @Test
-    fun `déconnexion en cours de paquet : le tampon est oublié`() {
+    fun `déconnexion en cours de paquet, le tampon est oublié`() {
         val r = Reassembleur()
         val paquet = paquetEncode(100)
         val morceaux = Fragmentation.decouper(paquet, 20)
