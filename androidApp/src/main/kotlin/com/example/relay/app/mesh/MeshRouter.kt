@@ -17,7 +17,8 @@ import com.relay.app.model.RelayPacket
 class MeshRouter(
     private val localShortId: String,
     private val nodeTracker: NodeTracker,
-    private val batteryMonitor: BatteryMonitor
+    /** Mode batterie : faut-il encore relayer ce paquet ? (BatteryMonitor.shouldRelay) */
+    private val peutRelayer: (RelayPacket) -> Boolean = { true },
 ) {
     private val bloom = BloomFilter()
     private val sprayAndWait = SprayAndWait(localShortId)
@@ -26,7 +27,17 @@ class MeshRouter(
     var onMessageForUs: ((RelayPacket) -> Unit)? = null
     var onPacketToRelay: ((RelayPacket, List<String>) -> Unit)? = null
     var onPreKeyReceived: ((RelayPacket) -> Unit)? = null
+    /** Reçoit l'identifiant du MESSAGE accusé (et non celui de l'expéditeur de l'accusé). */
     var onAckReceived: ((String) -> Unit)? = null
+    /** Un message pour nous arrive une seconde fois : l'expéditeur n'a pas eu l'accusé, le renvoyer. */
+    var onDoublonPourNous: ((RelayPacket) -> Unit)? = null
+
+    /**
+     * Paquets destinés à d'autres, gardés en phase Wait jusqu'à ce que leur
+     * destinataire passe à portée (stocker, transporter, livrer).
+     */
+    private val enAttente = LinkedHashMap<String, RelayPacket>()
+    private val maxEnAttente = 200
 
     /**
      * Point d'entrée unique — traite chaque paquet entrant.
@@ -36,6 +47,9 @@ class MeshRouter(
         // ── Déduplication ──────────────────────────────────
         if (bloom.mightContain(packet.id)) {
             Log.v("MeshRouter", "Paquet déjà vu : ${packet.id.take(8)}")
+            if (packet.type == PacketType.MESSAGE && packet.recipientId == localShortId) {
+                onDoublonPourNous?.invoke(packet)
+            }
             return
         }
         bloom.add(packet.id)
@@ -47,7 +61,7 @@ class MeshRouter(
         }
 
         // ── Vérification batterie ──────────────────────────
-        if (!batteryMonitor.shouldRelay(packet)) {
+        if (packet.recipientId != localShortId && !peutRelayer(packet)) {
             Log.d("MeshRouter", "Mode critique — paquet ignoré")
             return
         }
@@ -98,11 +112,15 @@ class MeshRouter(
                         "Spray ${action.copies} copies vers ${relays.size} relais")
                     onPacketToRelay?.invoke(packet.decrementTtl(), addresses)
                     relays.forEach { nodeTracker.recordRelay(it.shortId) }
+                } else {
+                    // Personne à qui le passer pour l'instant : on le garde
+                    garder(packet)
                 }
             }
 
             is SprayAction.WAIT -> {
-                // Phase Wait — on garde le paquet mais on ne relaie pas
+                // Phase Wait : on garde le paquet, livré si son destinataire passe
+                garder(packet)
                 Log.v("MeshRouter", "Wait — paquet gardé : ${packet.id.take(8)}")
             }
         }
@@ -151,24 +169,44 @@ class MeshRouter(
 
     private fun handleAck(packet: RelayPacket) {
         if (packet.recipientId == localShortId) {
-            onAckReceived?.invoke(packet.senderId)
+            // Le payload porte l'identifiant du message accusé
+            onAckReceived?.invoke(String(packet.payload, Charsets.UTF_8))
         } else {
-            // Relaie l'ACK vers l'expéditeur original
+            // Relaie l'ACK vers l'expéditeur original, ou le garde s'il n'est pas à portée
             val senderMac = nodeTracker.getMacAddress(packet.recipientId ?: return)
             if (senderMac != null) {
                 onPacketToRelay?.invoke(packet.decrementTtl(), listOf(senderMac))
+            } else {
+                garder(packet)
             }
         }
     }
+
+    @Synchronized
+    private fun garder(packet: RelayPacket) {
+        if (packet.recipientId == null || packet.ttl <= 1) return
+        enAttente[packet.id] = packet
+        while (enAttente.size > maxEnAttente) enAttente.remove(enAttente.keys.first())
+    }
+
+    /** Nombre de paquets d'autres appareils gardés pour être livrés plus tard. */
+    @Synchronized
+    fun nombreEnAttente(): Int = enAttente.size
 
     /**
      * Appelé par MeshService quand un nouveau pair est découvert.
      * Si on était en phase Wait pour un message destiné à ce pair,
      * on peut maintenant le livrer directement.
      */
+    @Synchronized
     fun onNewPeerAvailable(shortId: String, macAddress: String) {
         Log.d("MeshRouter", "Nouveau pair disponible : $shortId")
-        // Le prochain passage dans handle() détectera le contact direct
-        // via nodeTracker.getMacAddress()
+        val pourLui = enAttente.values.filter { it.recipientId == shortId && it.isValid() }
+        pourLui.forEach { p ->
+            enAttente.remove(p.id)
+            onPacketToRelay?.invoke(p.decrementTtl(), listOf(macAddress))
+        }
+        // Les paquets expirés ne servent plus à rien
+        enAttente.values.removeAll { !it.isValid() }
     }
 }

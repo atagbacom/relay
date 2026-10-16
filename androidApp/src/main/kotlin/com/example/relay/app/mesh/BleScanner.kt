@@ -23,6 +23,7 @@ class BleScanner(private val context: Context) {
     }
 
     private var scanner: BluetoothLeScanner? = null
+    private val identifiantsParAdresse = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     // Callback appelé pour chaque pair découvert
     var onPeerDiscovered: ((address: String, shortId: String, rssi: Int) -> Unit)? = null
@@ -36,9 +37,13 @@ class BleScanner(private val context: Context) {
             val manufacturerData = result.scanRecord
                 ?.getManufacturerSpecificData(0x1234)
             EtatMesh.annoncesRecues.value += 1
-            val shortId = manufacturerData
-                ?.let { String(it, Charsets.UTF_8) }
-                ?: return  // annonce Relay sans réponse au scan (encore) : on attend la suivante
+            // L'identifiant n'est que dans la réponse au scan, qui n'accompagne
+            // qu'une partie des annonces : on retient l'adresse pour reconnaître
+            // l'appareil à toutes ses annonces (avant : vu une fois, puis perdu)
+            val shortId = manufacturerData?.let { String(it, Charsets.UTF_8) }
+                ?.also { identifiantsParAdresse[address] = it }
+                ?: identifiantsParAdresse[address]
+                ?: return
 
             Log.d(TAG, "Pair découvert : $shortId @ $address")
             onPeerDiscovered?.invoke(address, shortId, rssi)

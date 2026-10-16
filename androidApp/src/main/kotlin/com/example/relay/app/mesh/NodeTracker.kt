@@ -18,7 +18,8 @@ class NodeTracker {
 
     data class NodeInfo(
         val shortId: String,
-        val macAddress: String,
+        /** Peut changer : Android fait tourner l'adresse Bluetooth (vie privée). */
+        var macAddress: String,
         val firstSeenAt: Long = System.currentTimeMillis(),
         var lastSeenAt: Long = System.currentTimeMillis(),
         var relayCount: Int = 0,
@@ -26,7 +27,7 @@ class NodeTracker {
         var rssi: Int = -100   // Force du signal BLE — plus proche de 0 = mieux
     )
 
-    private val nodes = mutableMapOf<String, NodeInfo>()
+    private val nodes = java.util.concurrent.ConcurrentHashMap<String, NodeInfo>()
 
     /**
      * Enregistre ou met à jour un nœud découvert.
@@ -36,6 +37,7 @@ class NodeTracker {
         if (existing != null) {
             existing.lastSeenAt = System.currentTimeMillis()
             existing.rssi = rssi
+            existing.macAddress = macAddress   // toujours la dernière adresse vue
         } else {
             nodes[shortId] = NodeInfo(shortId, macAddress, rssi = rssi)
             Log.d("NodeTracker", "Nouveau nœud : $shortId (rssi=$rssi)")

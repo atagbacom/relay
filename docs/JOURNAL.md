@@ -216,6 +216,32 @@ Chaque entrée suit le même schéma : **constat**, **cause**, **solution**, **l
   - caméra demandée au moment de scanner ;
   - notifications des messages et des alertes, sans contenu sur l'écran verrouillé ; les toucher ouvre la conversation.
 
+
+### 16. Deux téléphones se parlent, mais l'acheminement est capricieux
+
+- **Constat (essai à deux téléphones, avec le diagnostic).** Les messages passent ! Mais :
+  - un message envoyé pendant l'absence de l'autre reste « en attente » même après son retour ;
+  - un message déjà arrivé est parfois affiché « en attente » ;
+  - de deux messages envoyés vite, le premier se perd parfois ;
+  - le diagnostic montre **8 549 annonces Relay reçues, mais l'autre appareil reconnu une seule fois**.
+- **Causes trouvées.**
+  - l'identifiant n'est que dans la réponse au scan, qui n'accompagne qu'une partie des annonces : l'appareil était reconnu une fois puis considéré comme parti ;
+  - Android change régulièrement l'adresse Bluetooth : l'application gardait la première, périmée ;
+  - **l'accusé de réception transmettait l'identifiant de l'appareil au lieu de celui du message** : aucun message n'était jamais marqué « remis » ;
+  - un message reçu deux fois était ignoré sans renvoyer d'accusé ;
+  - aucune file d'attente : un message partait une fois, vers les appareils présents à cet instant ;
+  - un paquet « gardé en attente » pour un autre n'était en fait gardé nulle part : le relais à plusieurs sauts ne pouvait pas marcher ;
+  - chaque envoi ouvrait sa propre connexion Bluetooth, et deux connexions simultanées se gênaient.
+- **Solution.**
+  - adresse associée à l'identifiant dès la première réponse au scan, adresse mise à jour à chaque annonce ;
+  - accusé corrigé, et renvoyé si un message arrive en double ;
+  - file d'attente enregistrée en base : renvoi toutes les 30 s et dès qu'un appareil apparaît, jusqu'à l'accusé (48 h au plus) ;
+  - paquets pour d'autres réellement gardés et livrés quand leur destinataire passe ;
+  - envois Bluetooth un par un ;
+  - tests du routeur (accusé, doublon, garde et livraison différée, changement d'adresse).
+
+> **Leçon.** Un essai réel, même à deux téléphones, révèle en une heure ce que des semaines de lecture de code ne montrent pas. Et un écran de diagnostic transforme « ça ne marche pas » en un chiffre qui désigne la cause.
+
 ---
 
 ## Points ouverts
