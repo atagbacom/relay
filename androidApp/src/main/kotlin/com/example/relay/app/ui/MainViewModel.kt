@@ -129,7 +129,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         direction = direction,
         senderOrRecipient = contactShortId,
         trustLevel = trustLevelAtSend,
-        timestamp = timestamp
+        timestamp = timestamp,
+        delivered = delivered
     )
 
     override fun onCleared() {

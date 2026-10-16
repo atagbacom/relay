@@ -45,6 +45,8 @@ object RelayPalette {
     val OrProfond = Color(0xFF9A5408)
     val OrPale = Color(0xFFFCEBC9)
     val OrLumiere = Color(0xFFFDC65A)
+    /** Message remis, sur fond bleu nuit. */
+    val Remis = Color(0xFF9EDCA3)
     val Encre = Color(0xFF14181F)
     val Papier = Color(0xFFF5F7FA)
     val Blanc = Color(0xFFFFFFFF)
