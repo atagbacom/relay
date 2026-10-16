@@ -46,7 +46,40 @@ data class SignalRecordEntity(
     val data: ByteArray
 )
 
+/**
+ * Un message envoyé, pas encore accusé : le paquet chiffré est gardé tel quel
+ * et renvoyé tant que l'accusé n'arrive pas (le chiffrement ne peut pas être
+ * refait, le ratchet a avancé).
+ */
+@Entity(tableName = "envois")
+data class EnvoiEntity(
+    @PrimaryKey val id: String,
+    val destinataire: String,
+    val paquet: ByteArray,
+    val creeA: Long,
+    val tentatives: Int = 0,
+    val dernierEssai: Long = 0,
+)
+
 // ─── DAOs ──────────────────────────────────────────────────
+
+@Dao
+interface EnvoiDao {
+    @Query("SELECT * FROM envois ORDER BY creeA")
+    suspend fun tous(): List<EnvoiEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun enregistrer(envoi: EnvoiEntity)
+
+    @Query("UPDATE envois SET tentatives = tentatives + 1, dernierEssai = :quand WHERE id = :id")
+    suspend fun noterEssai(id: String, quand: Long)
+
+    @Query("DELETE FROM envois WHERE id = :id")
+    suspend fun supprimer(id: String)
+
+    @Query("DELETE FROM envois WHERE creeA < :avant")
+    suspend fun purger(avant: Long)
+}
 
 /** Appels synchrones : le protocole Signal les fait depuis Dispatchers.IO. */
 @Dao
@@ -114,8 +147,8 @@ interface MessageDao {
 // ─── Database ──────────────────────────────────────────────
 
 @Database(
-    entities = [IdentityEntity::class, ContactEntity::class, MessageEntity::class, SignalRecordEntity::class],
-    version = 2,
+    entities = [IdentityEntity::class, ContactEntity::class, MessageEntity::class, SignalRecordEntity::class, EnvoiEntity::class],
+    version = 3,
     exportSchema = false
 )
 abstract class RelayDatabase : RoomDatabase() {
@@ -123,8 +156,21 @@ abstract class RelayDatabase : RoomDatabase() {
     abstract fun contactDao(): ContactDao
     abstract fun messageDao(): MessageDao
     abstract fun signalRecordDao(): SignalRecordDao
+    abstract fun envoiDao(): EnvoiDao
 
     companion object {
+        /** v3 : table envois (messages non accusés, renvoyés automatiquement). */
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `envois` (" +
+                        "`id` TEXT NOT NULL, `destinataire` TEXT NOT NULL, `paquet` BLOB NOT NULL, " +
+                        "`creeA` INTEGER NOT NULL, `tentatives` INTEGER NOT NULL, `dernierEssai` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`id`))"
+                )
+            }
+        }
+
         /** v2 : table signal_records (état Signal persistant). */
         private val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -144,7 +190,7 @@ abstract class RelayDatabase : RoomDatabase() {
                     context.applicationContext,
                     RelayDatabase::class.java,
                     "relay.db"
-                ).addMigrations(MIGRATION_1_2).build().also { INSTANCE = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { INSTANCE = it }
             }
         }
     }

@@ -127,4 +127,9 @@ android {
     buildFeatures {
         compose = true
     }
+    testOptions {
+        // android.util.Log et autres appels Android renvoient une valeur par
+        // défaut dans les tests JVM (routeur, suivi des pairs)
+        unitTests.isReturnDefaultValues = true
+    }
 }

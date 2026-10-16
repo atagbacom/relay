@@ -8,6 +8,7 @@ import androidx.core.app.NotificationCompat
 import com.relay.app.crypto.*
 import com.relay.app.model.*
 import com.relay.app.repository.RelayRepository
+import com.relay.app.storage.EnvoiEntity
 import com.relay.app.storage.MessageEntity
 import com.relay.app.storage.ContactEntity
 import kotlinx.coroutines.*
@@ -108,7 +109,7 @@ class MeshService : Service() {
             }
 
 
-            router = MeshRouter(localShortId, nodeTracker, batteryMonitor)
+            router = MeshRouter(localShortId, nodeTracker, batteryMonitor::shouldRelay)
             advertiser = BleAdvertiser(this@MeshService)
             scanner = BleScanner(this@MeshService)
             gattServer = BleGattServer(this@MeshService)
@@ -119,6 +120,13 @@ class MeshService : Service() {
             setupGattServer()
 
             pret.complete(Unit)
+            lancerFileBle()
+            scope.launch {
+                while (isActive) {
+                    delay(15_000)
+                    relancerEnvois()
+                }
+            }
             EtatMesh.identifiant.value = localShortId
             EtatMesh.noter("Service prêt, identifiant $localShortId")
 
@@ -143,6 +151,50 @@ class MeshService : Service() {
                     broadcastPeerCount()
                 }
             }
+        }
+    }
+
+    // ─── File d'envoi Bluetooth ──────────────────────────────
+
+    /**
+     * Un seul envoi GATT à la fois : deux connexions simultanées vers le même
+     * téléphone se gênaient, et le premier de deux messages rapides se perdait.
+     */
+    private val fileBle = kotlinx.coroutines.channels.Channel<Pair<String, ByteArray>>(capacity = 200)
+
+    private fun lancerFileBle() = scope.launch {
+        for ((adresse, octets) in fileBle) {
+            val ok = withTimeoutOrNull(20_000) {
+                suspendCancellableCoroutine<Boolean> { cont ->
+                    val client = BleGattClient(this@MeshService, adresse)
+                    client.onSendComplete = { succes ->
+                        client.disconnect()
+                        if (cont.isActive) cont.resumeWith(Result.success(succes))
+                    }
+                    client.send(octets)
+                }
+            } ?: false
+            if (!ok) EtatMesh.noter("Envoi Bluetooth vers $adresse échoué")
+        }
+    }
+
+    // ─── Envois en attente d'accusé ─────────────────────────
+
+    /** Renvoie les messages non accusés : à leur destinataire s'il est là, sinon aux relais. */
+    private suspend fun relancerEnvois(force: Boolean = false) {
+        if (!pret.isCompleted) return
+        val maintenant = System.currentTimeMillis()
+        repo.envois.purger(maintenant - RelayPacket.TTL_48H)
+        val actifs = nodeTracker.getActiveNodes()
+        if (actifs.isEmpty()) return
+        repo.envois.tous().forEach { e ->
+            if (!force && maintenant - e.dernierEssai < 30_000) return@forEach
+            val direct = actifs.firstOrNull { it.shortId == e.destinataire }
+            val cibles = if (direct != null) listOf(direct.macAddress)
+                         else nodeTracker.getBestRelays(localShortId, 3).map { it.macAddress }
+            if (cibles.isEmpty()) return@forEach
+            cibles.forEach { fileBle.trySend(it to e.paquet) }
+            repo.envois.noterEssai(e.id, maintenant)
         }
     }
 
@@ -213,7 +265,16 @@ class MeshService : Service() {
         }
 
         router.onAckReceived = { messageId ->
-            scope.launch { repo.markDelivered(messageId) }
+            scope.launch {
+                repo.markDelivered(messageId)
+                repo.envois.supprimer(messageId)
+                EtatMesh.noter("Accusé de réception reçu pour ${messageId.take(8)}")
+            }
+        }
+
+        // Message déjà reçu, renvoyé par l'expéditeur : son accusé s'est perdu
+        router.onDoublonPourNous = { packet ->
+            scope.launch { envoyerAck(packet) }
         }
     }
     private fun setupScanner() {
@@ -228,6 +289,7 @@ class MeshService : Service() {
                     EtatMesh.noter("Appareil Relay découvert : $shortId (signal $rssi dBm)")
                     router.onNewPeerAvailable(shortId, address)
                     scope.launch { sendOurPreKeys(address) }
+                    scope.launch { delay(1_500); relancerEnvois(force = true) }
                     updateNotification(
                         "Mesh actif — ${nodeTracker.activeCount()} pairs"
                     )
@@ -285,9 +347,13 @@ class MeshService : Service() {
                     )
                 )
 
-                // Injecte dans le mesh
-                relayToAllPeers(packet)
-                Log.d(TAG, "Message envoyé à $recipientId")
+                // Gardé jusqu'à l'accusé de réception, puis tenté tout de suite
+                val octets = serializePacket(packet) ?: return@launch
+                repo.envois.enregistrer(
+                    EnvoiEntity(id = packet.id, destinataire = recipientId, paquet = octets, creeA = System.currentTimeMillis())
+                )
+                EtatMesh.noter("Message ${packet.id.take(8)} pour $recipientId en file d'envoi")
+                relancerEnvois(force = true)
 
             } catch (e: Exception) {
                 Log.e(TAG, "Erreur envoi : ${e.message}")
@@ -331,31 +397,28 @@ class MeshService : Service() {
                 putExtra(EXTRA_PLAINTEXT, plaintext)
             })
 
-            // Envoie un ACK en retour
-            val ack = RelayPacket(
-                id = UUID.randomUUID().toString(),
-                type = PacketType.ACK,
-                senderId = localShortId,
-                recipientId = packet.senderId,
-                payload = packet.id.toByteArray(),  // ID du message acquitté
-                signature = signPayload(packet.id.toByteArray()),
-                ttl = RelayPacket.MAX_HOPS
-            )
-            relayToRouter(ack)
+            envoyerAck(packet)
 
         } catch (e: Exception) {
             Log.e(TAG, "Erreur déchiffrement : ${e.message}")
         }
     }
 
-    private fun relayToRouter(packet: RelayPacket) {
-        val relays = nodeTracker.getBestRelays(
-            excludeShortId = localShortId,
-            count = SprayAndWait.SPRAY_COPIES
+    /** Accusé de réception : directement à l'expéditeur s'il est à portée, sinon aux relais. */
+    private fun envoyerAck(message: RelayPacket) {
+        val ack = RelayPacket(
+            id = UUID.randomUUID().toString(),
+            type = PacketType.ACK,
+            senderId = localShortId,
+            recipientId = message.senderId,
+            payload = message.id.toByteArray(),  // ID du message acquitté
+            signature = signPayload(message.id.toByteArray()),
+            ttl = RelayPacket.MAX_HOPS
         )
-        if (relays.isNotEmpty()) {
-            relays.forEach { sendPacketTo(it.macAddress, packet) }
-        }
+        val direct = nodeTracker.getActiveNodes().firstOrNull { it.shortId == message.senderId }
+        val cibles = if (direct != null) listOf(direct.macAddress)
+                     else nodeTracker.getBestRelays(localShortId, SprayAndWait.SPRAY_COPIES).map { it.macAddress }
+        cibles.forEach { sendPacketTo(it, ack) }
     }
     // ─── Gossip prekeys ──────────────────────────────────────
 
@@ -408,19 +471,9 @@ class MeshService : Service() {
 
     // ─── Transport ───────────────────────────────────────────
 
-    private suspend fun relayToAllPeers(packet: RelayPacket) {
-        withContext(Dispatchers.IO) {
-            peers.values.forEach { address ->
-                sendPacketTo(address, packet)
-            }
-        }
-    }
-
     private fun sendPacketTo(address: String, packet: RelayPacket) {
         val bytes = serializePacket(packet) ?: return
-        val client = BleGattClient(this, address)
-        client.onSendComplete = { client.disconnect() }
-        client.send(bytes)
+        fileBle.trySend(address to bytes)
     }
 
     // ─── Helpers ─────────────────────────────────────────────
