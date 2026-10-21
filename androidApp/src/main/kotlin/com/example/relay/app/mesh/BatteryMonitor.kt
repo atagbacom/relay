@@ -26,6 +26,9 @@ class BatteryMonitor(private val context: Context) {
 
     enum class BatteryMode { FULL, LOW, CRITICAL }
 
+    /** Choix de l'utilisateur : selon la batterie, ou économie imposée. */
+    enum class Choix { AUTO, ECONOMIE, ECONOMIE_MAX }
+
     companion object {
         const val THRESHOLD_LOW = 30       // % — passe en mode LOW
         const val THRESHOLD_CRITICAL = 15  // % — passe en mode CRITICAL
@@ -38,25 +41,41 @@ class BatteryMonitor(private val context: Context) {
     private val _level = MutableStateFlow(100)
     val level: StateFlow<Int> = _level
 
+    private var choix = Choix.AUTO
+
+    fun choisir(c: Choix) {
+        choix = c
+        recalculer()
+    }
+
+    /** Mode appliqué : celui de la batterie, jamais moins économe que le choix de l'utilisateur. */
+    private fun recalculer() {
+        val percent = _level.value
+        val selonBatterie = when {
+            percent <= THRESHOLD_CRITICAL -> BatteryMode.CRITICAL
+            percent <= THRESHOLD_LOW      -> BatteryMode.LOW
+            else                          -> BatteryMode.FULL
+        }
+        val impose = when (choix) {
+            Choix.AUTO -> BatteryMode.FULL
+            Choix.ECONOMIE -> BatteryMode.LOW
+            Choix.ECONOMIE_MAX -> BatteryMode.CRITICAL
+        }
+        val newMode = maxOf(selonBatterie, impose)
+        if (newMode != _mode.value) {
+            Log.d(TAG, "Mode batterie : ${_mode.value} → $newMode ($percent%, choix $choix)")
+            _mode.value = newMode
+        }
+    }
+
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
             val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
             if (level == -1 || scale == -1) return
 
-            val percent = (level * 100 / scale.toFloat()).toInt()
-            _level.value = percent
-
-            val newMode = when {
-                percent <= THRESHOLD_CRITICAL -> BatteryMode.CRITICAL
-                percent <= THRESHOLD_LOW      -> BatteryMode.LOW
-                else                          -> BatteryMode.FULL
-            }
-
-            if (newMode != _mode.value) {
-                Log.d(TAG, "Mode batterie : ${_mode.value} → $newMode ($percent%)")
-                _mode.value = newMode
-            }
+            _level.value = (level * 100 / scale.toFloat()).toInt()
+            recalculer()
         }
     }
 
@@ -73,13 +92,20 @@ class BatteryMonitor(private val context: Context) {
     }
 
     /**
-     * Fréquence de scan BLE selon le mode batterie.
-     * En mode critique, on scanne moins souvent pour économiser.
+     * Intensité du scan selon le mode. Avant, une valeur était calculée ici
+     * mais jamais utilisée : la batterie ne changeait rien au Bluetooth.
      */
-    fun scanIntervalMs(): Long = when (_mode.value) {
-        BatteryMode.FULL     -> 0L       // Continu
-        BatteryMode.LOW      -> 5_000L   // Toutes les 5 secondes
-        BatteryMode.CRITICAL -> 30_000L  // Toutes les 30 secondes
+    fun modeScan(): Int = when (_mode.value) {
+        BatteryMode.FULL     -> android.bluetooth.le.ScanSettings.SCAN_MODE_LOW_LATENCY
+        BatteryMode.LOW      -> android.bluetooth.le.ScanSettings.SCAN_MODE_BALANCED
+        BatteryMode.CRITICAL -> android.bluetooth.le.ScanSettings.SCAN_MODE_LOW_POWER
+    }
+
+    /** Fréquence d'annonce selon le mode : plus rare, on est découvert un peu moins vite. */
+    fun modeAnnonce(): Int = when (_mode.value) {
+        BatteryMode.FULL     -> android.bluetooth.le.AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY
+        BatteryMode.LOW      -> android.bluetooth.le.AdvertiseSettings.ADVERTISE_MODE_BALANCED
+        BatteryMode.CRITICAL -> android.bluetooth.le.AdvertiseSettings.ADVERTISE_MODE_LOW_POWER
     }
 
     /**
@@ -89,7 +115,9 @@ class BatteryMonitor(private val context: Context) {
         return when (_mode.value) {
             BatteryMode.FULL     -> true
             BatteryMode.LOW      -> true
-            BatteryMode.CRITICAL -> packet.ttl >= RelayPacket.MAX_HOPS - 1
+            // Accusés et alertes toujours ; le reste seulement près de sa source
+            BatteryMode.CRITICAL -> packet.type == com.relay.app.model.PacketType.ACK ||
+                packet.ttl >= RelayPacket.MAX_HOPS - 1
         }
     }
 }

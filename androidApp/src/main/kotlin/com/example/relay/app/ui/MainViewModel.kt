@@ -49,8 +49,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val peers: StateFlow<List<String>> = EtatMesh.pairs
         .map { liste -> liste.map { it.shortId } }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
-    val batteryLevel = MutableStateFlow(100)
-    val batteryMode = MutableStateFlow("FULL")
+    val batteryLevel: StateFlow<Int> = EtatMesh.batterie
+    val batteryMode: StateFlow<String> = EtatMesh.modeBatterie
+    val choixBatterie: StateFlow<String> = EtatMesh.choixBatterie
+
+    fun choisirBatterie(choix: String) {
+        reglages.modeBatterie = choix
+        EtatMesh.choixBatterie.value = choix
+    }
 
     val contacts: StateFlow<List<UiContact>> = repo.observeContacts()
         .map { list -> list.map { it.toUiContact() } }
@@ -79,10 +85,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 MeshService.ACTION_PEER_COUNT_CHANGED -> {
                     peerCount.value = intent.getIntExtra("count", 0)
                 }
-                MeshService.ACTION_BATTERY_CHANGED -> {
-                    batteryLevel.value = intent.getIntExtra("level", 100)
-                    batteryMode.value = intent.getStringExtra("mode") ?: "FULL"
-                }
             }
         }
     }
@@ -99,7 +101,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val filter = IntentFilter().apply {
             addAction(MeshService.ACTION_MESSAGE_RECEIVED)
             addAction(MeshService.ACTION_PEER_COUNT_CHANGED)
-            addAction(MeshService.ACTION_BATTERY_CHANGED)
         }
         ContextCompat.registerReceiver(app, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
     }

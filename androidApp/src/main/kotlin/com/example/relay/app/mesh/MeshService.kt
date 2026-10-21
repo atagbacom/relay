@@ -102,13 +102,19 @@ class MeshService : Service() {
             nodeTracker = NodeTracker()
             batteryMonitor = BatteryMonitor(this@MeshService)
             batteryMonitor.start()
+            EtatMesh.choixBatterie.value = com.relay.app.Reglages(this@MeshService).modeBatterie
+            scope.launch {
+                EtatMesh.choixBatterie.collect { c ->
+                    batteryMonitor.choisir(runCatching { BatteryMonitor.Choix.valueOf(c) }.getOrDefault(BatteryMonitor.Choix.AUTO))
+                }
+            }
+            // Avant : diffusé seulement au changement de mode, le pourcentage
+            // affiché restait figé
+            scope.launch { batteryMonitor.level.collect { EtatMesh.batterie.value = it } }
             scope.launch {
                 batteryMonitor.mode.collect { mode ->
-                    sendBroadcast(Intent(ACTION_BATTERY_CHANGED).apply {
-                        setPackage(packageName)
-                        putExtra("level", batteryMonitor.level.value)
-                        putExtra("mode", mode.name)
-                    })
+                    EtatMesh.modeBatterie.value = mode.name
+                    appliquerModeBatterie()
                 }
             }
 
@@ -125,6 +131,7 @@ class MeshService : Service() {
             advertiser = BleAdvertiser(this@MeshService)
             scanner = BleScanner(this@MeshService)
             gattServer = BleGattServer(this@MeshService)
+            appliquerModeBatterie()
 
 
             setupRouter()
@@ -141,7 +148,9 @@ class MeshService : Service() {
                     router.relancer()
                     // Les clés ne partaient qu'à la première détection : si cet
                     // unique envoi échouait, aucune session ne s'ouvrait jamais
-                    if (++tour % 4 == 0) diffuserNosCles()
+                    // Toutes les minutes ; toutes les deux en mode critique
+                    val rythme = if (batteryMonitor.mode.value == BatteryMonitor.BatteryMode.CRITICAL) 8 else 4
+                    if (++tour % rythme == 0) diffuserNosCles()
                     // Android ralentit puis coupe un scan qui dure (30 min), et certains
                     // téléphones ne remontent plus les annonces répétées : le radar
                     // restait figé sur la première position. Relancé toutes les 5 min.
@@ -295,6 +304,19 @@ class MeshService : Service() {
             updateNotification("Autorisations Bluetooth manquantes")
             EtatMesh.noter("Autorisations Bluetooth manquantes : ${e.message}")
         }
+    }
+
+    /** Scan et annonce au rythme du mode batterie ; relancés seulement s'ils tournent. */
+    private fun appliquerModeBatterie() {
+        if (!::scanner.isInitialized || !::advertiser.isInitialized) return
+        val scanAvant = scanner.modeScan
+        val annonceAvant = advertiser.modeAnnonce
+        scanner.modeScan = batteryMonitor.modeScan()
+        advertiser.modeAnnonce = batteryMonitor.modeAnnonce()
+        if (EtatMesh.bluetoothActif.value != true) return
+        if (scanAvant == scanner.modeScan && annonceAvant == advertiser.modeAnnonce) return
+        EtatMesh.noter("Mode batterie ${batteryMonitor.mode.value.name} : scan et annonce ajustés")
+        runCatching { scanner.start(); advertiser.start(localShortId) }
     }
 
     private fun arreterBle() {
