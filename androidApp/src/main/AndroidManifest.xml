@@ -59,6 +59,11 @@
 
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="com.relay.app.URGENCE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <meta-data android:name="android.app.shortcuts" android:resource="@xml/raccourcis" />
         </activity>
         <service
             android:name="com.relay.app.mesh.MeshService"
