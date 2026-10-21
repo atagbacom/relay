@@ -259,6 +259,7 @@ class MeshService : Service() {
         override fun onReceive(context: android.content.Context, intent: Intent) {
             when (intent.getIntExtra(android.bluetooth.BluetoothAdapter.EXTRA_STATE, -1)) {
                 android.bluetooth.BluetoothAdapter.STATE_ON -> {
+                    Notifications.retirerBluetoothEteint(this@MeshService)
                     EtatMesh.noter("Bluetooth rallumé : relance du mesh")
                     scope.launch { demarrerBle() }
                 }
@@ -267,6 +268,7 @@ class MeshService : Service() {
                     arreterBle()
                     EtatMesh.bluetoothActif.value = false
                     updateNotification("Bluetooth désactivé — activez-le pour relayer")
+                    Notifications.bluetoothEteint(this@MeshService)
                 }
             }
         }
@@ -278,10 +280,12 @@ class MeshService : Service() {
         if (bluetooth == null || !bluetooth.isEnabled) {
             EtatMesh.bluetoothActif.value = bluetooth != null && bluetooth.isEnabled
             updateNotification("Bluetooth désactivé — activez-le pour relayer")
+            if (bluetooth != null) Notifications.bluetoothEteint(this)
             EtatMesh.noter(if (bluetooth == null) "Pas de Bluetooth sur ce téléphone" else "Bluetooth éteint : mesh en attente")
             return
         }
         EtatMesh.bluetoothActif.value = true
+        Notifications.retirerBluetoothEteint(this)
         try {
             gattServer.start()
             advertiser.start(localShortId)

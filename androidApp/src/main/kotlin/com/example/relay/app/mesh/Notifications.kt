@@ -15,12 +15,19 @@ import com.relay.app.MainActivity
 object Notifications {
     const val CANAL_MESSAGES = "messages"
     const val CANAL_ALERTES = "alertes"
+    const val CANAL_ETAT = "etat_reseau"
+    private const val ID_BLUETOOTH = 9001
     /** Extra de l'intent : identifiant du contact dont ouvrir la conversation. */
     const val EXTRA_OUVRIR_CONTACT = "ouvrir_contact"
     private const val PREFIXE_ALERTE = "ALERTE · "
 
     fun creerCanaux(context: Context) {
         val nm = context.getSystemService(NotificationManager::class.java)
+        nm.createNotificationChannel(
+            NotificationChannel(CANAL_ETAT, "État du réseau", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                description = "Bluetooth éteint : Relay ne peut plus envoyer ni relayer"
+            }
+        )
         nm.createNotificationChannel(
             NotificationChannel(CANAL_MESSAGES, "Messages", NotificationManager.IMPORTANCE_HIGH).apply {
                 description = "Nouveaux messages reçus par le réseau Relay"
@@ -38,6 +45,36 @@ object Notifications {
      * Le contenu n'apparaît pas sur l'écran verrouillé : seulement « Nouveau
      * message chiffré ». Toucher la notification ouvre la conversation.
      */
+    /**
+     * Bluetooth éteint : sans lui, rien ne passe. Toucher la notification
+     * demande au téléphone de l'allumer. Retirée dès qu'il est rallumé.
+     */
+    @SuppressLint("MissingPermission")
+    fun bluetoothEteint(context: Context) {
+        val nmc = NotificationManagerCompat.from(context)
+        if (!nmc.areNotificationsEnabled()) return
+        val activer = PendingIntent.getActivity(
+            context, 9,
+            Intent(android.bluetooth.BluetoothAdapter.ACTION_REQUEST_ENABLE).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notif = NotificationCompat.Builder(context, CANAL_ETAT)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setColor(0xFF13294B.toInt())
+            .setContentTitle("Bluetooth éteint")
+            .setContentText("Relay ne peut ni envoyer, ni recevoir, ni relayer. Touchez pour l'allumer.")
+            .setContentIntent(activer)
+            .addAction(0, "Activer le Bluetooth", activer)
+            .setOnlyAlertOnce(true)
+            .setAutoCancel(true)
+            .build()
+        nmc.notify(ID_BLUETOOTH, notif)
+    }
+
+    fun retirerBluetoothEteint(context: Context) {
+        NotificationManagerCompat.from(context).cancel(ID_BLUETOOTH)
+    }
+
     /** Quelqu'un vient de nous vérifier : ouvrir l'application pour comparer les mots. */
     @SuppressLint("MissingPermission")
     fun verification(context: Context, contactId: String, nom: String) {

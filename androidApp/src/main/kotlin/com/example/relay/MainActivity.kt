@@ -12,6 +12,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.*
@@ -172,8 +173,19 @@ fun RelayApp(viewModel: MainViewModel, contactAOuvrir: MutableState<String?> = m
     VerificationRecueDialogue(viewModel)
 
     val avecBarre = screen is Screen.Reseau || screen is Screen.Messages
+    val bluetooth by com.relay.app.mesh.EtatMesh.bluetoothActif.collectAsState()
     Scaffold(
-        bottomBar = { if (avecBarre) BarreNavigation(onglet, ::versOnglet) },
+        bottomBar = {
+            androidx.compose.foundation.layout.Column {
+                // En bas pour ne pas recouvrir les en-têtes ; visible sur tous les écrans
+                if (bluetooth == false) {
+                    com.relay.app.ui.components.BandeauBluetooth(
+                        if (avecBarre) Modifier else Modifier.navigationBarsPadding()
+                    )
+                }
+                if (avecBarre) BarreNavigation(onglet, ::versOnglet)
+            }
+        },
         contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { marges ->
         Box(Modifier.padding(marges)) {
