@@ -17,3 +17,10 @@ captures
 !*.xcworkspace/contents.xcworkspacedata
 **/xcshareddata/WorkspaceSettings.xcsettings
 node_modules/
+
+# Secrets : clés de signature et variables d'environnement, jamais dans le dépôt
+.env
+.env.*
+*.jks
+*.keystore
+!androidApp/debug.keystore

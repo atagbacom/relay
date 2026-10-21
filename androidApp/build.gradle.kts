@@ -72,14 +72,26 @@ android {
             keyAlias = "androiddebugkey"
             keyPassword = "android"
         }
+        // Clé de production : fournie par la CI de publication (secrets GitHub),
+        // jamais présente dans le dépôt. Absente, la version réduite est signée
+        // avec la clé de débogage, pour être testée mais jamais publiée.
+        System.getenv("RELAY_KEYSTORE_FILE")?.takeIf { file(it).exists() }?.let { chemin ->
+            create("production") {
+                storeFile = file(chemin)
+                storePassword = System.getenv("RELAY_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("RELAY_KEY_ALIAS")
+                keyPassword = System.getenv("RELAY_KEY_PASSWORD")
+            }
+        }
     }
     defaultConfig {
         // Identifiant définitif : le changer après une distribution empêcherait les mises à jour
         applicationId = "com.atagba.relay"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 1
-        versionName = "1.0"
+        // Donnés par la CI de publication à partir du tag (v0.3.0 → 0.3.0)
+        versionCode = (project.findProperty("relay.versionCode") as String?)?.toInt() ?: 1
+        versionName = (project.findProperty("relay.version") as String?) ?: "0.0.0-dev"
     }
     packaging {
         resources {
@@ -115,7 +127,11 @@ android {
     }
     buildTypes {
         getByName("release") {
-            isMinifyEnabled = false
+            // R8 : code et ressources inutilisés retirés, APK plus léger
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.findByName("production") ?: signingConfigs.getByName("debug")
         }
     }
     compileOptions {

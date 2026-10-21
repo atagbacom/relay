@@ -308,6 +308,17 @@ Chaque entrée suit le même schéma : **constat**, **cause**, **solution**, **l
 
 **Complément : le message qui attend une action.** A écrit à B éteint ; B se rallume, rien n'arrive, jusqu'à ce que B écrive à A ou qu'un scan de QR ait lieu. Cause : en rallumant le Bluetooth, B change d'adresse, et A ne le reconnaissait qu'en lisant son identifiant dans la réponse au scan, que certains téléphones remontent rarement. Un paquet reçu directement de B ne servait pas à constater son retour. Désormais, tout paquet arrivé directement de son expéditeur (nombre de sauts intact) prouve qu'il est là, donne sa nouvelle adresse et relance aussitôt ce qui l'attend.
 
+### 22. Version signée et publication
+
+- **Besoin.** Le bouton « Télécharger » de la landing page doit proposer une vraie version : signée avec une clé de production, allégée, installable par-dessus la précédente.
+- **Solution.**
+  - clé de production créée sur le poste du responsable, sauvegardée hors du PC, transmise à la CI uniquement par les secrets GitHub ; `.env`, `*.jks` et `*.keystore` ignorés par git ;
+  - version réduite par R8 (code et ressources inutilisés retirés), avec les règles qui protègent libsignal, appelé par son nom depuis la bibliothèque native ;
+  - chaque PR démarre aussi la version réduite sur émulateur : une règle R8 manquante se voit avant la fusion ;
+  - publication par tag `vX.Y.Z` : tests, démarrage sur émulateur, signature, vérification que l'APK n'est pas signé avec la clé de débogage, GitHub Release avec les APK et leurs empreintes SHA-256.
+
+> **Leçon.** La clé de signature ne se remplace pas : sa garde se décide avant la première version publique, pas après.
+
 ---
 
 ## Points ouverts
