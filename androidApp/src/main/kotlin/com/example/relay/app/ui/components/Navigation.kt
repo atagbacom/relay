@@ -104,13 +104,21 @@ fun LigneConversation(contact: UiContact, onClick: () -> Unit, modifier: Modifie
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                contact.lastMessage ?: if (contact.isOnline) "À portée" else "Chiffré de bout en bout",
+                contact.lastMessage ?: "Aucun message pour l'instant",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            BadgeConfiance(confiance)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                BadgeConfiance(confiance)
+                // Joignabilité : à portée directe, ou les messages attendent un relais
+                Text(
+                    if (contact.isOnline) "● à portée" else "hors de portée",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (contact.isOnline) androidx.compose.ui.graphics.Color(0xFF2E9E47) else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }

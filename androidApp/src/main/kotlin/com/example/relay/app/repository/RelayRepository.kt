@@ -84,6 +84,8 @@ class RelayRepository(context: Context) {
 
     // ─── Messages ────────────────────────────────────────────
 
+    fun observeDerniers(): Flow<List<MessageEntity>> = messageDao.observeDerniers()
+
     fun observeConversation(contactShortId: String): Flow<List<MessageEntity>> {
         return messageDao.observeConversation(contactShortId)
     }
