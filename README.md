@@ -67,6 +67,18 @@ Pour installer l'APK téléchargé sur un téléphone branché : `adb install re
 
 Le mesh BLE nécessite du matériel Bluetooth réel : pour tester les échanges entre pairs, installez l'application sur au moins deux appareils physiques (un émulateur ne dispose pas de radio BLE fonctionnelle). Au premier lancement, l'application demande les permissions Bluetooth, localisation et caméra nécessaires au scan BLE et au scan de QR code.
 
+## Usage prévu
+
+Relay est conçu pour **la résilience des communications quand le réseau manque** : zones sans couverture, coupures, catastrophes naturelles, rassemblements qui saturent le réseau mobile, équipes de terrain. Il ne sert pas à contourner une restriction d'accès imposée par la loi, et ne doit pas être présenté ainsi.
+
+Relay est une preuve de concept, en essai sur le terrain. Il n'a pas fait l'objet d'un audit de sécurité indépendant : ne le confiez pas à des personnes dont la sécurité dépendrait de lui.
+
+## Licence
+
+Relay est un logiciel libre distribué sous la **GNU Affero General Public License, version 3** : voir [LICENSE](LICENSE). Toute version distribuée, modifiée ou non, doit être accompagnée de son code source. Les composants tiers et leurs licences sont listés dans [docs/licences/COMPOSANTS.md](docs/licences/COMPOSANTS.md).
+
+Copyright © 2026 les auteurs de Relay (voir l'historique du dépôt). Projet porté par Àtagbà.
+
 ## Journal du projet
 
 Les étapes, problèmes rencontrés et solutions retenues sont tenus dans [docs/JOURNAL.md](docs/JOURNAL.md).
