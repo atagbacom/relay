@@ -88,4 +88,31 @@ class FragmentationTest {
         morceaux.dropLast(1).forEach { assertNull(r.ajouter("A", it)) }
         assertArrayEquals(paquet, r.ajouter("A", morceaux.last()))
     }
+
+    @Test
+    fun `envoi interrompu puis nouveau paquet, le nouveau arrive entier`() {
+        val r = Reassembleur()
+        val coupe = Fragmentation.decouper(paquetEncode(300), 20)
+        assertNull(r.ajouter("A", coupe[0]))
+        assertNull(r.ajouter("A", coupe[1]))   // la suite ne viendra jamais
+        val suivant = paquetEncode(120)
+        var complet: ByteArray? = null
+        Fragmentation.decouper(suivant, 20).forEach { complet = r.ajouter("A", it) ?: complet }
+        assertArrayEquals(suivant, complet)
+    }
+
+    @Test
+    fun `tampon abandonné trop longtemps oublié`() {
+        var maintenant = 0L
+        val r = Reassembleur { maintenant }
+        val paquet = paquetEncode(100)
+        val morceaux = Fragmentation.decouper(paquet, 20)
+        assertNull(r.ajouter("A", morceaux[0]))
+        maintenant += Reassembleur.EXPIRATION_MS + 1
+        // la suite arrive trop tard : rattachée à rien, elle ne forme pas de paquet
+        morceaux.drop(1).forEach { assertNull(r.ajouter("A", it)) }
+        var complet: ByteArray? = null
+        morceaux.forEach { complet = r.ajouter("A", it) ?: complet }
+        assertArrayEquals(paquet, complet)
+    }
 }

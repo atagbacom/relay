@@ -265,6 +265,24 @@ Chaque entrée suit le même schéma : **constat**, **cause**, **solution**, **l
 
 > **Leçon.** Le nom affiché vient d'abord de celui qui regarde : on propose le nom annoncé, on ne l'impose pas.
 
+### 19. Régression : plus aucun message après la création du contact
+
+- **Constat.** Après les versions « un seul scan » et « réglages », plus aucun message ne passait entre deux téléphones, et la vérification n'arrivait pas non plus chez l'autre (d'où l'impression de devoir encore scanner deux fois).
+- **Causes trouvées** (sans téléphone sous la main, par lecture du code ; aucune n'apparaissait dans le diagnostic) :
+  - les clés de chiffrement n'étaient envoyées qu'une fois, à la toute première détection : si cet unique envoi Bluetooth échouait, aucune session ne s'ouvrait jamais ;
+  - sans session, le message était perdu sans trace : ni enregistré, ni signalé ;
+  - un envoi abandonné après délai laissait sa connexion Bluetooth ouverte, ce qui pouvait bloquer les suivants vers le même téléphone ;
+  - un paquet interrompu restait dans le tampon de réception et faisait jeter le paquet suivant ;
+  - un message déjà déchiffré avant un redémarrage n'était pas réacquitté : il restait « en attente » chez l'expéditeur.
+- **Solution.**
+  - clés renvoyées à chaque voisin toutes les minutes, et en retour dès qu'une session s'ouvre ;
+  - message toujours enregistré, mis en attente sans session, chiffré dès que les clés arrivent ;
+  - session renouvelée automatiquement si les messages restent sans accusé, avec les mêmes identifiants (pas de doublon) ;
+  - connexion fermée après délai, tampon de réception remis à zéro par un nouvel en-tête ou après 10 s ;
+  - toutes les erreurs de chiffrement, de déchiffrement et de clés écrites dans le journal du diagnostic.
+
+> **Leçon.** Une erreur qui ne va que dans les logs n'existe pas sur le terrain. Tout échec doit être visible là où l'utilisateur peut le lire.
+
 ---
 
 ## Points ouverts

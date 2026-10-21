@@ -125,9 +125,13 @@ class MeshService : Service() {
             pret.complete(Unit)
             lancerFileBle()
             scope.launch {
+                var tour = 0
                 while (isActive) {
                     delay(15_000)
                     relancerEnvois()
+                    // Les clés ne partaient qu'à la première détection : si cet
+                    // unique envoi échouait, aucune session ne s'ouvrait jamais
+                    if (++tour % 4 == 0) diffuserNosCles()
                 }
             }
             EtatMesh.identifiant.value = localShortId
@@ -174,6 +178,9 @@ class MeshService : Service() {
                         client.disconnect()
                         if (cont.isActive) cont.resumeWith(Result.success(succes))
                     }
+                    // Délai dépassé : sans ça la connexion restait ouverte et
+                    // bloquait les envois suivants vers le même téléphone
+                    cont.invokeOnCancellation { runCatching { client.disconnect() } }
                     client.send(octets)
                 }
             } ?: false
@@ -325,48 +332,85 @@ class MeshService : Service() {
     private fun sendMessage(recipientId: String, plaintext: String) {
         scope.launch {
             pret.await()
-            try {
-                val store = signalStore
-                val recipientAddress = SignalProtocolAddress(recipientId, 1)
-                val cipher = SessionCipher(store, recipientAddress)
-
-                // Chiffre avec Double Ratchet
-                val encrypted = RelayMessage.encrypt(cipher, plaintext)
-
-                val packet = RelayPacket(
-                    id = UUID.randomUUID().toString(),
-                    type = PacketType.MESSAGE,
-                    senderId = localShortId,
-                    recipientId = recipientId,
-                    payload = serializeEncrypted(encrypted),
-                    signature = signPayload(serializeEncrypted(encrypted)),
-                    ttl = RelayPacket.MAX_HOPS
+            val id = UUID.randomUUID().toString()
+            // Enregistré d'abord : avant, un message sans session était perdu sans trace
+            repo.saveMessage(
+                MessageEntity(
+                    id = id,
+                    contactShortId = recipientId,
+                    direction = "OUT",
+                    plaintext = plaintext,
+                    trustLevelAtSend = getTrustLevel(recipientId),
+                    timestamp = System.currentTimeMillis()
                 )
-
-                // Persiste en base
-                repo.saveMessage(
-                    MessageEntity(
-                        id = packet.id,
-                        contactShortId = recipientId,
-                        direction = "OUT",
-                        plaintext = plaintext,
-                        trustLevelAtSend = getTrustLevel(recipientId),
-                        timestamp = System.currentTimeMillis()
-                    )
-                )
-
-                // Gardé jusqu'à l'accusé de réception, puis tenté tout de suite
-                val octets = serializePacket(packet) ?: return@launch
-                repo.envois.enregistrer(
-                    EnvoiEntity(id = packet.id, destinataire = recipientId, paquet = octets, creeA = System.currentTimeMillis())
-                )
-                EtatMesh.noter("Message ${packet.id.take(8)} pour $recipientId en file d'envoi")
-                relancerEnvois(force = true)
-
-            } catch (e: Exception) {
-                Log.e(TAG, "Erreur envoi : ${e.message}")
-            }
+            )
+            chiffrerEtEnvoyer(recipientId, id, plaintext)
         }
+    }
+
+    /**
+     * Chiffre un message déjà enregistré et le met en file d'envoi. Sans
+     * session, il attend les clés du destinataire : [envoyerEnAttente] le
+     * reprendra dès qu'elles arrivent.
+     */
+    private suspend fun chiffrerEtEnvoyer(destinataire: String, id: String, texte: String): Boolean {
+        val adresse = SignalProtocolAddress(destinataire, RelaySession.DEVICE_ID)
+        if (!signalStore.containsSession(adresse)) {
+            EtatMesh.noter("Message ${id.take(8)} en attente : clés de $destinataire pas encore reçues")
+            envoyerNosCles(destinataire)
+            return false
+        }
+        return try {
+            val chiffre = serializeEncrypted(RelayMessage.encrypt(SessionCipher(signalStore, adresse), texte))
+            val packet = RelayPacket(
+                id = id,
+                type = PacketType.MESSAGE,
+                senderId = localShortId,
+                recipientId = destinataire,
+                payload = chiffre,
+                signature = signPayload(chiffre),
+                ttl = RelayPacket.MAX_HOPS
+            )
+            val octets = serializePacket(packet) ?: return false
+            repo.envois.enregistrer(
+                EnvoiEntity(id = id, destinataire = destinataire, paquet = octets, creeA = System.currentTimeMillis())
+            )
+            EtatMesh.noter("Message ${id.take(8)} pour $destinataire en file d'envoi")
+            relancerEnvois(force = true)
+            true
+        } catch (e: Exception) {
+            EtatMesh.noter("Chiffrement impossible pour $destinataire : ${e.javaClass.simpleName} ${e.message.orEmpty()}")
+            false
+        }
+    }
+
+    /** Messages restés sans paquet (pas de session à l'envoi) : chiffrés maintenant. */
+    private suspend fun envoyerEnAttente(contact: String) {
+        val enFile = repo.envois.pour(contact).map { it.id }.toSet()
+        repo.nonRemis(contact)
+            .filter { it.id !in enFile }
+            .forEach { chiffrerEtEnvoyer(contact, it.id, it.plaintext) }
+    }
+
+    /**
+     * Session cassée (l'autre ne déchiffre plus nos messages, aucun accusé ne
+     * revient) : on repart de ses clés fraîches et on rechiffre ce qui attend.
+     * Les identifiants restent les mêmes : un message déjà reçu n'est pas doublé.
+     */
+    private val derniereResync = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    private suspend fun resynchroniser(contact: String, bundle: org.signal.libsignal.protocol.state.PreKeyBundle) {
+        val maintenant = System.currentTimeMillis()
+        if (maintenant - (derniereResync[contact] ?: 0L) < 120_000) return
+        val bloques = repo.envois.pour(contact).filter { it.tentatives >= 3 && maintenant - it.creeA > 60_000 }
+        if (bloques.isEmpty()) return
+        derniereResync[contact] = maintenant
+        EtatMesh.noter("Session avec $contact renouvelée : ${bloques.size} message(s) sans accusé")
+        val adresse = SignalProtocolAddress(contact, RelaySession.DEVICE_ID)
+        signalStore.deleteSession(adresse)
+        SessionBuilder(signalStore, adresse).process(bundle)
+        bloques.forEach { repo.envois.supprimer(it.id) }
+        envoyerEnAttente(contact)
     }
 
     // ─── Réception d'un message ──────────────────────────────
@@ -406,9 +450,17 @@ class MeshService : Service() {
             })
 
             envoyerAck(packet)
+            // Premier message reçu de ce contact : la session existe, ce qui attendait peut partir
+            if (encrypted.isPreKeyMessage) envoyerEnAttente(packet.senderId)
 
+        } catch (e: org.signal.libsignal.protocol.DuplicateMessageException) {
+            // Déjà déchiffré (par exemple avant un redémarrage) : l'expéditeur attend encore l'accusé
+            EtatMesh.noter("Message ${packet.id.take(8)} déjà reçu : accusé renvoyé")
+            envoyerAck(packet)
         } catch (e: Exception) {
-            Log.e(TAG, "Erreur déchiffrement : ${e.message}")
+            EtatMesh.noter("Message de ${packet.senderId} indéchiffrable : ${e.javaClass.simpleName} ${e.message.orEmpty()}")
+            // L'expéditeur reçoit nos clés : s'il n'a pas d'accusé, il rouvrira la session
+            envoyerNosCles(packet.senderId)
         }
     }
 
@@ -477,6 +529,24 @@ class MeshService : Service() {
         sendPacketTo(peerAddress, packet)
     }
 
+    /** Nos clés vers un contact : directement s'il est à portée, sinon par les relais. */
+    private suspend fun envoyerNosCles(contact: String) {
+        val direct = nodeTracker.getActiveNodes().firstOrNull { it.shortId == contact }
+        val cibles = if (direct != null) listOf(direct.macAddress)
+                     else nodeTracker.getBestRelays(localShortId, 3).map { it.macAddress }
+        if (cibles.isEmpty()) return
+        val packet = gossip.createGossipPacket(localShortId, session.createPreKeyBundle(avecCleUnique = false))
+        cibles.forEach { sendPacketTo(it, packet) }
+    }
+
+    /** Nos clés à chaque voisin direct, régulièrement. */
+    private suspend fun diffuserNosCles() {
+        val voisins = nodeTracker.getActiveNodes(withinMs = 60_000)
+        if (voisins.isEmpty()) return
+        val packet = gossip.createGossipPacket(localShortId, session.createPreKeyBundle(avecCleUnique = false))
+        voisins.forEach { sendPacketTo(it.macAddress, packet) }
+    }
+
     /**
      * Clés reçues d'un pair. On vérifie la signature et que la clé correspond
      * à l'identifiant annoncé, puis on ouvre une session : nos messages vers
@@ -485,7 +555,7 @@ class MeshService : Service() {
     private suspend fun handlePreKeyGossip(packet: RelayPacket) {
         val bundle = gossip.verifyAndExtract(packet)
         if (bundle == null) {
-            Log.w(TAG, "Clés rejetées de ${packet.senderId} : signature ou identifiant invalide")
+            EtatMesh.noter("Clés rejetées de ${packet.senderId} : signature ou identifiant invalide")
             return
         }
         val senderId = packet.senderId
@@ -501,7 +571,7 @@ class MeshService : Service() {
             )
         } else if (existant.publicKey != bundle.identityKey) {
             // Même identifiant, autre clé : usurpation possible, on n'y touche pas
-            Log.w(TAG, "Clé différente pour $senderId : ignorée")
+            EtatMesh.noter("Clé différente reçue pour $senderId : ignorée (usurpation possible)")
             return
         } else {
             repo.upgradeTrust(senderId, TrustLevel.YELLOW)
@@ -511,10 +581,15 @@ class MeshService : Service() {
         try {
             val adresse = SignalProtocolAddress(senderId, RelaySession.DEVICE_ID)
             if (session.accepterBundle(adresse, bundle)) {
-                Log.d(TAG, "Session ouverte avec $senderId")
+                EtatMesh.noter("Session ouverte avec $senderId")
+                // Qu'il puisse aussi nous écrire, même si notre envoi de clés s'est perdu
+                envoyerNosCles(senderId)
+                envoyerEnAttente(senderId)
+            } else {
+                resynchroniser(senderId, bundle)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Session impossible avec $senderId : ${e.message}")
+            EtatMesh.noter("Session impossible avec $senderId : ${e.javaClass.simpleName} ${e.message.orEmpty()}")
         }
     }
 

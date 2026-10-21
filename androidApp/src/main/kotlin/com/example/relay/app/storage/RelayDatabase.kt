@@ -79,6 +79,9 @@ interface EnvoiDao {
 
     @Query("DELETE FROM envois WHERE creeA < :avant")
     suspend fun purger(avant: Long)
+
+    @Query("SELECT * FROM envois WHERE destinataire = :destinataire")
+    suspend fun pour(destinataire: String): List<EnvoiEntity>
 }
 
 /** Appels synchrones : le protocole Signal les fait depuis Dispatchers.IO. */
@@ -142,6 +145,10 @@ interface MessageDao {
 
     @Query("UPDATE messages SET delivered = 1 WHERE id = :id")
     suspend fun markDelivered(id: String)
+
+    /** Messages envoyés à ce contact et pas encore accusés, du plus ancien au plus récent. */
+    @Query("SELECT * FROM messages WHERE contactShortId = :contactShortId AND direction = 'OUT' AND delivered = 0 ORDER BY timestamp ASC")
+    suspend fun nonRemis(contactShortId: String): List<MessageEntity>
 }
 
 // ─── Database ──────────────────────────────────────────────
