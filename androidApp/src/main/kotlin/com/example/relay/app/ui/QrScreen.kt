@@ -3,6 +3,7 @@ package com.relay.app.ui
 import android.util.Size
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
+import com.relay.app.crypto.LecteurQr
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
@@ -44,9 +45,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.compose.ui.platform.LocalLifecycleOwner
-import com.google.mlkit.vision.barcode.BarcodeScanning
-import com.google.mlkit.vision.barcode.common.Barcode
-import com.google.mlkit.vision.common.InputImage
 import com.relay.app.crypto.Empreinte
 import com.relay.app.crypto.QrKeyExchange
 import com.relay.app.ui.components.Icones
@@ -300,24 +298,25 @@ private fun ScannerCamera(erreur: String?, onScanne: (String) -> Unit) {
                     futur.addListener({
                         val camera = futur.get().also { fournisseur = it }
                         val apercu = Preview.Builder().build().also { it.setSurfaceProvider(vue.surfaceProvider) }
-                        val lecteur = BarcodeScanning.getClient()
                         val analyse = ImageAnalysis.Builder()
                             .setTargetResolution(Size(1280, 720))
                             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                             .build()
                         analyse.setAnalyzer(executeur) { image ->
-                            val media = image.image
-                            if (media == null || dejaTraite.get()) {
-                                image.close()
-                                return@setAnalyzer
-                            }
-                            lecteur.process(InputImage.fromMediaImage(media, image.imageInfo.rotationDegrees))
-                                .addOnSuccessListener { codes ->
-                                    codes.firstOrNull { it.format == Barcode.FORMAT_QR_CODE }?.rawValue?.let {
-                                        if (dejaTraite.compareAndSet(false, true)) onScanne(it)
+                            try {
+                                if (dejaTraite.get()) return@setAnalyzer
+                                // Plan de luminance (Y) : suffit à ZXing pour lire le code
+                                val plan = image.planes[0]
+                                val tampon = plan.buffer
+                                val octets = ByteArray(tampon.remaining()).also { tampon.get(it) }
+                                LecteurQr.lire(octets, image.width, image.height, plan.rowStride)?.let { texte ->
+                                    if (dejaTraite.compareAndSet(false, true)) {
+                                        ContextCompat.getMainExecutor(ctx).execute { onScanne(texte) }
                                     }
                                 }
-                                .addOnCompleteListener { image.close() }
+                            } finally {
+                                image.close()
+                            }
                         }
                         try {
                             camera.unbindAll()

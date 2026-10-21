@@ -265,6 +265,13 @@ Chaque entrée suit le même schéma : **constat**, **cause**, **solution**, **l
 
 > **Leçon.** Le nom affiché vient d'abord de celui qui regarde : on propose le nom annoncé, on ne l'impose pas.
 
+### 21. Lecture des QR sans ML Kit
+
+- **Constat.** La lecture des codes QR passait par ML Kit, composant propriétaire de Google qui dépend de ses services : douteux dans une application AGPL, et bloquant pour une distribution hors Google Play.
+- **Solution.** Lecture par ZXing (Apache 2.0, déjà utilisé pour générer les codes) sur le plan de luminance de la caméra ; 4 tests (code lu, lignes avec bourrage, code tourné, image vide).
+
+> **Leçon.** Vérifier la licence de chaque dépendance au moment de l'ajouter coûte une minute ; la remplacer après coup coûte une PR.
+
 ---
 
 ## Points ouverts
