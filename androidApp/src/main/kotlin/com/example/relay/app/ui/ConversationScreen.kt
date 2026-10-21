@@ -58,8 +58,8 @@ fun ConversationScreen(
     }
 
     val confiance = Confiance.depuis(contact?.trustLevel?.name)
-    val estIdentifiant = contact?.alias == null
-    val nom = contact?.alias ?: "Appareil ${contactId.takeLast(4).uppercase()}"
+    val estIdentifiant = contact?.nomAffiche == null
+    val nom = contact?.nomAffiche ?: "Appareil ${contactId.takeLast(4).uppercase()}"
     val aPortee = contactId in peers
 
     Column(

@@ -117,7 +117,8 @@ class RelayRepository(context: Context) {
             trustLevel = TrustLevel.valueOf(trustLevel),
             alias = alias,
             firstSeenAt = firstSeenAt,
-            lastSeenAt = lastSeenAt
+            lastSeenAt = lastSeenAt,
+            nomAnnonce = nomAnnonce
         )
     }
 
@@ -128,7 +129,8 @@ class RelayRepository(context: Context) {
             trustLevel = trustLevel.name,
             alias = alias,
             firstSeenAt = firstSeenAt,
-            lastSeenAt = lastSeenAt
+            lastSeenAt = lastSeenAt,
+            nomAnnonce = nomAnnonce
         )
     }
 }

@@ -31,6 +31,7 @@ class MeshService : Service() {
         const val ACTION_RELANCER = "com.relay.app.RELANCER"
         /** Après un scan : envoyer notre clé à celui qu'on vient de scanner. */
         const val ACTION_VERIFIER = "com.relay.app.VERIFIER"
+        const val ACTION_DIFFUSER_CLES = "com.relay.app.DIFFUSER_CLES"
         const val EXTRA_NONCE = "nonce"
         const val EXTRA_RECIPIENT_ID = "recipient_id"
         const val EXTRA_MESSAGE = "message"
@@ -529,7 +530,7 @@ class MeshService : Service() {
             )
 
             // Notifie l'UI
-            val nom = repo.getContact(packet.senderId)?.alias ?: "Appareil ${packet.senderId.takeLast(4).uppercase()}"
+            val nom = repo.getContact(packet.senderId)?.nomAffiche ?: "Appareil ${packet.senderId.takeLast(4).uppercase()}"
             Notifications.message(this, packet.senderId, nom, plaintext)
 
             sendBroadcast(Intent(ACTION_MESSAGE_RECEIVED).apply {
@@ -590,7 +591,7 @@ class MeshService : Service() {
         envoyerAck(packet)
         EtatMesh.noter("${packet.senderId} vient de nous vérifier : comparaison des mots demandée")
         EtatMesh.verificationRecue.value = recue
-        val nom = recue.nom ?: repo.getContact(recue.shortId)?.alias ?: "Appareil ${recue.shortId.takeLast(4).uppercase()}"
+        val nom = repo.getContact(recue.shortId)?.alias ?: recue.nom ?: "Appareil ${recue.shortId.takeLast(4).uppercase()}"
         Notifications.verification(this, recue.shortId, nom)
     }
 
@@ -614,9 +615,11 @@ class MeshService : Service() {
 
     private suspend fun sendOurPreKeys(peerAddress: String) {
         val bundle = session.createPreKeyBundle(avecCleUnique = false)
-        val packet = gossip.createGossipPacket(localShortId, bundle)
+        val packet = gossip.createGossipPacket(localShortId, bundle, monNom())
         sendPacketTo(peerAddress, packet)
     }
+
+    private fun monNom(): String? = com.relay.app.Reglages(this).monNom.ifBlank { null }
 
     /** Nos clés vers un contact : directement s'il est à portée, sinon par les relais. */
     private suspend fun envoyerNosCles(contact: String) {
@@ -624,7 +627,7 @@ class MeshService : Service() {
         val cibles = if (direct != null) listOf(direct.macAddress)
                      else nodeTracker.getBestRelays(localShortId, 3).map { it.macAddress }
         if (cibles.isEmpty()) return
-        val packet = gossip.createGossipPacket(localShortId, session.createPreKeyBundle(avecCleUnique = false))
+        val packet = gossip.createGossipPacket(localShortId, session.createPreKeyBundle(avecCleUnique = false), monNom())
         cibles.forEach { sendPacketTo(it, packet) }
     }
 
@@ -632,7 +635,7 @@ class MeshService : Service() {
     private suspend fun diffuserNosCles() {
         val voisins = nodeTracker.getActiveNodes(withinMs = 30_000)
         if (voisins.isEmpty()) return
-        val packet = gossip.createGossipPacket(localShortId, session.createPreKeyBundle(avecCleUnique = false))
+        val packet = gossip.createGossipPacket(localShortId, session.createPreKeyBundle(avecCleUnique = false), monNom())
         voisins.forEach { sendPacketTo(it.macAddress, packet) }
     }
 
@@ -650,12 +653,14 @@ class MeshService : Service() {
         val senderId = packet.senderId
 
         val existant = repo.getContact(senderId)
+        val nomAnnonce = gossip.nomDe(packet)
         if (existant == null) {
             repo.saveContact(
                 RelayContact(
                     shortId = senderId,
                     publicKey = bundle.identityKey,
-                    trustLevel = TrustLevel.YELLOW
+                    trustLevel = TrustLevel.YELLOW,
+                    nomAnnonce = nomAnnonce
                 )
             )
         } else if (existant.publicKey != bundle.identityKey) {
@@ -664,6 +669,12 @@ class MeshService : Service() {
             return
         } else {
             repo.upgradeTrust(senderId, TrustLevel.YELLOW)
+            // Le contact a changé de nom : pris en compte sans nouveau scan.
+            // Un nom donné à la main (alias) reste affiché en priorité.
+            if (nomAnnonce != null && nomAnnonce != existant.nomAnnonce) {
+                repo.getContact(senderId)?.let { repo.saveContact(it.copy(nomAnnonce = nomAnnonce)) }
+                EtatMesh.noter("$senderId s'appelle maintenant « $nomAnnonce »")
+            }
         }
         nodeTracker.markPreKeyExchanged(senderId)
 
@@ -762,6 +773,8 @@ class MeshService : Service() {
                 val nonce = intent.getStringExtra(EXTRA_NONCE) ?: return START_STICKY
                 envoyerVerification(dest, nonce)
             }
+            // Notre nom vient de changer : nos voisins le reçoivent tout de suite
+            ACTION_DIFFUSER_CLES -> scope.launch { pret.await(); diffuserNosCles() }
             ACTION_RELANCER -> scope.launch {
                 pret.await()
                 EtatMesh.noter("Relance du mesh demandée")

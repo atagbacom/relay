@@ -45,7 +45,7 @@ fun FicheContactScreen(
     val messages by viewModel.messagesForContact(contactId).collectAsState(emptyList())
     val enAttente = messages.count { it.direction == "OUT" && !it.delivered }
     val confiance = Confiance.depuis(contact?.trustLevel?.name)
-    val nom = contact?.alias
+    val nom = contact?.nomAffiche
     val titre = nom ?: "Appareil ${contactId.takeLast(4).uppercase()}"
     var renommer by remember { mutableStateOf(false) }
     var ouvert by remember(confiance) { mutableStateOf<Confiance?>(confiance) }
