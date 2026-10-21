@@ -14,4 +14,9 @@ class Reglages(context: Context) {
     var monNom: String
         get() = prefs.getString("mon_nom", "").orEmpty()
         set(v) = prefs.edit().putString("mon_nom", v.trim().take(40)).apply()
+
+    /** La demande « relais en arrière-plan » a déjà été montrée une fois. */
+    var arrierePlanPropose: Boolean
+        get() = prefs.getBoolean("arriere_plan_propose", false)
+        set(v) = prefs.edit().putBoolean("arriere_plan_propose", v).apply()
 }
