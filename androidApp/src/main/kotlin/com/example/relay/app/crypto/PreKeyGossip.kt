@@ -26,10 +26,13 @@ class PreKeyGossip(private val localIdentity: IdentityKeyPair) {
      */
     fun createGossipPacket(
         shortId: String,
-        bundle: PreKeyBundle
+        bundle: PreKeyBundle,
+        nom: String? = null
     ): RelayPacket {
-        // Sérialise le bundle
-        val bundleBytes = serializeBundle(bundle)
+        // Sérialise le bundle, suivi du nom choisi : signé avec lui, il ne peut
+        // pas être changé en route. Un changement de nom se propage ainsi sans
+        // nouveau scan (avant : il ne partait que dans le QR).
+        val bundleBytes = serializeBundle(bundle, nom)
 
         // Signe le bundle avec la clé privée Ed25519 locale
         // Quiconque reçoit ce paquet peut vérifier la signature
@@ -84,7 +87,15 @@ class PreKeyGossip(private val localIdentity: IdentityKeyPair) {
 
     // Sérialisation simple pour le Sprint 2
     // Sprint 3 : on migre vers Protocol Buffers pour l'efficacité réseau
-    private fun serializeBundle(bundle: PreKeyBundle): ByteArray {
+    /** Nom annoncé dans un paquet déjà vérifié par [verifyAndExtract], s'il y en a un. */
+    fun nomDe(packet: RelayPacket): String? = runCatching {
+        String(packet.payload, Charsets.UTF_8).split("|").getOrNull(8)
+            ?.takeIf { it.isNotEmpty() }
+            ?.let { String(Base64.getUrlDecoder().decode(it), Charsets.UTF_8).trim().take(40) }
+            ?.ifEmpty { null }
+    }.getOrNull()
+
+    private fun serializeBundle(bundle: PreKeyBundle, nom: String?): ByteArray {
         val parts = listOf(
             bundle.registrationId.toString(),
             bundle.deviceId.toString(),
@@ -93,7 +104,10 @@ class PreKeyGossip(private val localIdentity: IdentityKeyPair) {
             bundle.signedPreKeyId.toString(),
             bundle.signedPreKey.serialize().let { Base64.getEncoder().encodeToString(it) },
             Base64.getEncoder().encodeToString(bundle.signedPreKeySignature),
-            Base64.getEncoder().encodeToString(bundle.identityKey.serialize())
+            Base64.getEncoder().encodeToString(bundle.identityKey.serialize()),
+            // 9e champ, ignoré par les versions précédentes ; base64 URL : jamais de « | »
+            nom?.trim()?.take(40)?.takeIf { it.isNotEmpty() }
+                ?.let { Base64.getUrlEncoder().withoutPadding().encodeToString(it.toByteArray(Charsets.UTF_8)) } ?: ""
         )
         return parts.joinToString("|").toByteArray(Charsets.UTF_8)
     }

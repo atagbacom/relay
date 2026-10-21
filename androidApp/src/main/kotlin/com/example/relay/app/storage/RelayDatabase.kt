@@ -21,7 +21,9 @@ data class ContactEntity(
     val trustLevel: String,       // "GREEN" | "YELLOW" | "ORANGE"
     val alias: String?,
     val firstSeenAt: Long,
-    val lastSeenAt: Long
+    val lastSeenAt: Long,
+    /** Nom que le contact s'est donné, reçu signé avec ses clés (v5). */
+    val nomAnnonce: String? = null,
 )
 
 @Entity(tableName = "messages")
@@ -181,7 +183,7 @@ interface MessageDao {
 
 @Database(
     entities = [IdentityEntity::class, ContactEntity::class, MessageEntity::class, SignalRecordEntity::class, EnvoiEntity::class, RelaisEntity::class],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class RelayDatabase : RoomDatabase() {
@@ -193,6 +195,16 @@ abstract class RelayDatabase : RoomDatabase() {
     abstract fun relaisDao(): RelaisDao
 
     companion object {
+        /** v5 : nom annoncé par le contact, distinct du nom donné à la main. */
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `contacts` ADD COLUMN `nomAnnonce` TEXT")
+                // Jusqu'ici le nom reçu par QR était rangé comme un nom donné à la
+                // main : il devient le nom annoncé, que le contact pourra mettre à jour
+                db.execSQL("UPDATE `contacts` SET `nomAnnonce` = `alias`, `alias` = NULL WHERE `alias` IS NOT NULL")
+            }
+        }
+
         /** v4 : table relais (paquets d'autres appareils gardés pour leur destinataire). */
         private val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -235,7 +247,7 @@ abstract class RelayDatabase : RoomDatabase() {
                     context.applicationContext,
                     RelayDatabase::class.java,
                     "relay.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { INSTANCE = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build().also { INSTANCE = it }
             }
         }
     }

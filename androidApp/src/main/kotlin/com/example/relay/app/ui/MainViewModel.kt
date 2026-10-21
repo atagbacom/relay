@@ -36,6 +36,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         reglages.monNom = nom
         monNom.value = reglages.monNom
         regenererQr()
+        // Les contacts à portée l'apprennent tout de suite ; les autres à la prochaine rencontre
+        runCatching {
+            getApplication<Application>().startService(
+                Intent(getApplication(), MeshService::class.java).setAction(MeshService.ACTION_DIFFUSER_CLES)
+            )
+        }
     }
 
     /** Empreinte lisible de notre clé, à comparer à voix haute. */
@@ -201,13 +207,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val contact = existing?.copy(
                 publicKey = qrContact.publicKey,
                 trustLevel = TrustLevel.GREEN,
-                // un nom donné à la main reste prioritaire sur celui transmis
-                alias = existing.alias ?: nom
+                // le nom transmis ; un nom donné à la main (alias) reste prioritaire
+                nomAnnonce = nom ?: existing.nomAnnonce
             ) ?: RelayContact(
                 shortId = qrContact.shortId,
                 publicKey = qrContact.publicKey,
                 trustLevel = TrustLevel.GREEN,
-                alias = nom
+                nomAnnonce = nom
             )
             repo.saveContact(contact)
         }

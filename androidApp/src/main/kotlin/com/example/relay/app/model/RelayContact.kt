@@ -9,7 +9,8 @@ import org.signal.libsignal.protocol.IdentityKey
  * @param shortId       Identifiant lisible — 8 chars hex de sa clé publique
  * @param publicKey     Sa clé publique Ed25519 — reçue par un des 3 canaux
  * @param trustLevel    Niveau de confiance actuel
- * @param alias         Nom optionnel donné par l'utilisateur local
+ * @param alias         Nom optionnel donné par l'utilisateur local (prioritaire)
+ * @param nomAnnonce    Nom que le contact s'est donné lui-même, reçu signé
  * @param firstSeenAt   Timestamp du premier contact
  * @param lastSeenAt    Timestamp du dernier message reçu ou relayé
  */
@@ -19,14 +20,19 @@ data class RelayContact(
     val trustLevel: TrustLevel,
     val alias: String? = null,
     val firstSeenAt: Long = System.currentTimeMillis(),
-    val lastSeenAt: Long = System.currentTimeMillis()
+    val lastSeenAt: Long = System.currentTimeMillis(),
+    val nomAnnonce: String? = null,
 ) {
+    /** Le nom à montrer : celui donné à la main, sinon celui que le contact s'est donné. */
+    val nomAffiche: String?
+        get() = alias ?: nomAnnonce
+
     /**
      * Nom affiché dans l'UI.
      * Alias si défini, sinon shortId.
      */
     val displayName: String
-        get() = alias ?: shortId
+        get() = nomAffiche ?: shortId
 
     /**
      * Monte le niveau de confiance du contact.
