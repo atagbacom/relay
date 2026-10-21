@@ -3,7 +3,7 @@
 # accordées, lance l'application et vérifie qu'elle tourne encore 20 s plus
 # tard. En cas de plantage, la pile d'erreur part dans le résumé de la CI.
 set -u
-APK=androidApp/build/outputs/apk/debug/androidApp-universal-debug.apk
+APK=${1:-androidApp/build/outputs/apk/debug/androidApp-universal-debug.apk}
 PAQUET=com.atagba.relay
 RESUME=${GITHUB_STEP_SUMMARY:-/dev/stdout}
 

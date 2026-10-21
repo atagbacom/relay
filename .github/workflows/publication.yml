@@ -1,0 +1,114 @@
+name: Publication
+
+# Une version publique de Relay : pousser un tag vX.Y.Z sur main.
+#   git tag v0.3.0 && git push origin v0.3.0
+# La CI vérifie la version réduite sur émulateur, la signe avec la clé de
+# production (secrets GitHub) et la publie en GitHub Release.
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  verifier:
+    name: Version réduite sur émulateur
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: corretto
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Tests unitaires
+        run: ./gradlew :androidApp:testDebugUnitTest --stacktrace
+      - name: Activer KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Compiler la version réduite avec la version x86_64
+        run: ./gradlew :androidApp:assembleRelease -Prelay.emulateur --stacktrace
+      - name: Installer, lancer, vérifier
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: bash .github/scripts/demarrage.sh androidApp/build/outputs/apk/release/androidApp-universal-release.apk
+
+  publier:
+    name: Signer et publier
+    needs: verifier
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: corretto
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Clé de production
+        env:
+          RELAY_KEYSTORE_BASE64: ${{ secrets.RELAY_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$RELAY_KEYSTORE_BASE64" ]; then echo "Secret RELAY_KEYSTORE_BASE64 absent" >&2; exit 1; fi
+          echo "$RELAY_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/relay-release.jks"
+          echo "RELAY_KEYSTORE_FILE=$RUNNER_TEMP/relay-release.jks" >> "$GITHUB_ENV"
+
+      - name: Compiler et signer
+        env:
+          RELAY_KEYSTORE_PASSWORD: ${{ secrets.RELAY_KEYSTORE_PASSWORD }}
+          RELAY_KEY_ALIAS: ${{ secrets.RELAY_KEY_ALIAS }}
+          RELAY_KEY_PASSWORD: ${{ secrets.RELAY_KEY_PASSWORD }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          ./gradlew :androidApp:assembleRelease \
+            -Prelay.version="$VERSION" \
+            -Prelay.versionCode="${{ github.run_number }}" --stacktrace
+
+      - name: Vérifier la signature de production
+        run: |
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          for apk in androidApp/build/outputs/apk/release/*.apk; do
+            "$APKSIGNER" verify --print-certs "$apk" | tee -a certificats.txt
+          done
+          if grep -q "CN=Android Debug" certificats.txt; then
+            echo "APK signé avec la clé de débogage : publication refusée" >&2; exit 1
+          fi
+
+      - name: Nommer les APK
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir publication
+          cd androidApp/build/outputs/apk/release
+          cp androidApp-universal-release.apk   "$GITHUB_WORKSPACE/publication/relay-$VERSION.apk"
+          cp androidApp-arm64-v8a-release.apk   "$GITHUB_WORKSPACE/publication/relay-$VERSION-arm64-v8a.apk"
+          cp androidApp-armeabi-v7a-release.apk "$GITHUB_WORKSPACE/publication/relay-$VERSION-armeabi-v7a.apk"
+          cd "$GITHUB_WORKSPACE/publication" && sha256sum *.apk > SHA256SUMS.txt
+
+      - name: Publier la GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          cat > notes.md <<NOTES
+          Relay $VERSION, version d'essai (preuve de concept, non auditée).
+
+          **Quel fichier ?** \`relay-$VERSION.apk\` marche sur tous les téléphones Android 8 ou plus récents. Les fichiers \`arm64-v8a\` (téléphones récents) et \`armeabi-v7a\` (téléphones anciens) sont plus légers.
+
+          Empreintes SHA-256 dans \`SHA256SUMS.txt\`. Code source sous licence AGPLv3 : ce dépôt, au tag $GITHUB_REF_NAME.
+          NOTES
+          sed -i 's/^          //' notes.md
+          gh release create "$GITHUB_REF_NAME" publication/* \
+            --title "Relay $VERSION" --notes-file notes.md --prerelease
+
+      - name: Effacer la clé
+        if: always()
+        run: rm -f "$RUNNER_TEMP/relay-release.jks"

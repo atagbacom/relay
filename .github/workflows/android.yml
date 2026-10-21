@@ -106,3 +106,47 @@ jobs:
           name: logcat-demarrage
           path: logcat.txt
           if-no-files-found: ignore
+
+  reduite:
+    name: Version réduite (R8) sur émulateur
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Java 21 (JVM du démon Gradle)
+        uses: actions/setup-java@v4
+        with:
+          distribution: corretto
+          java-version: "21"
+
+      - name: Gradle avec cache
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Activer KVM (accélération de l'émulateur)
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      # Signée avec la clé de débogage : sert seulement à vérifier que R8 ne
+      # casse rien (libsignal appelle du Java par son nom), jamais publiée
+      - name: Compiler la version réduite avec la version x86_64
+        run: ./gradlew :androidApp:assembleRelease -Prelay.emulateur --stacktrace
+
+      - name: Installer, lancer, vérifier
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: bash .github/scripts/demarrage.sh androidApp/build/outputs/apk/release/androidApp-universal-release.apk
+
+      - name: Journal Android
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logcat-version-reduite
+          path: logcat.txt
+          if-no-files-found: ignore
