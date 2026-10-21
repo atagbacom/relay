@@ -171,6 +171,8 @@ fun RelayApp(viewModel: MainViewModel, contactAOuvrir: MutableState<String?> = m
 
     // Quelqu'un vient de scanner notre code : comparer les mots, où qu'on soit
     VerificationRecueDialogue(viewModel)
+    // Une seule fois : ne pas laisser l'économie de batterie couper le relais
+    ArrierePlanDialogue()
 
     val avecBarre = screen is Screen.Reseau || screen is Screen.Messages
     val bluetooth by com.relay.app.mesh.EtatMesh.bluetoothActif.collectAsState()

@@ -117,6 +117,37 @@ fun ReglagesScreen(
             ) { Text("Diagnostic détaillé") }
         }
 
+        Bloc("Relais en arrière-plan") {
+            // Relu régulièrement : l'utilisateur revient des réglages du téléphone
+            val libre by produceState(com.relay.app.ArrierePlan.estLibre(contexte)) {
+                while (true) { value = com.relay.app.ArrierePlan.estLibre(contexte); kotlinx.coroutines.delay(1_500) }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(Modifier.size(10.dp).background(if (libre) Color(0xFF2E9E47) else Color(0xFFC25A14), CircleShape))
+                Text(
+                    if (libre) "Relay peut relayer écran éteint" else "L'économie de batterie peut couper Relay",
+                    style = MaterialTheme.typography.bodyLarge
+                )
+            }
+            if (!libre) {
+                Button(
+                    onClick = { com.relay.app.ArrierePlan.demanderLiberte(contexte) },
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.padding(top = 10.dp).fillMaxWidth().height(48.dp)
+                ) { Text("Autoriser l'arrière-plan") }
+            }
+            Text(
+                "Sur certains téléphones (Infinix, Tecno, Xiaomi…), activez aussi « Démarrage automatique » dans la fiche de l'application.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 10.dp)
+            )
+            OutlinedButton(
+                onClick = { com.relay.app.ArrierePlan.ouvrirFicheApplication(contexte) },
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.padding(top = 8.dp).fillMaxWidth().height(48.dp)
+            ) { Text("Ouvrir la fiche de Relay") }
+        }
+
         Bloc("Notifications") {
             Text(
                 "Messages et alertes ont chacun leur canal : vous pouvez régler le son et l'affichage séparément.",
