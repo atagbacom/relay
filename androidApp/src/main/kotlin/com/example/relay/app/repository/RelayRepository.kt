@@ -30,6 +30,7 @@ class RelayRepository(context: Context) {
     private val contactDao = db.contactDao()
     private val messageDao = db.messageDao()
     val envois = db.envoiDao()
+    val relais = db.relaisDao()
 
     // ─── Identité ────────────────────────────────────────────
 

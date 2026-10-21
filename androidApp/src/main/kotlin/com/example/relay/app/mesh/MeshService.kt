@@ -9,6 +9,7 @@ import com.relay.app.crypto.*
 import com.relay.app.model.*
 import com.relay.app.repository.RelayRepository
 import com.relay.app.storage.EnvoiEntity
+import com.relay.app.storage.RelaisEntity
 import com.relay.app.storage.MessageEntity
 import com.relay.app.storage.ContactEntity
 import kotlinx.coroutines.*
@@ -113,6 +114,14 @@ class MeshService : Service() {
 
 
             router = MeshRouter(localShortId, nodeTracker, batteryMonitor::shouldRelay)
+            // Copies gardées pour d'autres : rechargées, elles survivent à un redémarrage
+            router.restaurer(repo.relais.valides(System.currentTimeMillis()).mapNotNull { PacketCodec.decode(it.paquet) })
+            router.onGarde = { p ->
+                serializePacket(p)?.let { octets ->
+                    scope.launch { repo.relais.garder(RelaisEntity(p.id, octets, p.expiresAt)) }
+                }
+            }
+            router.onRetrait = { id -> scope.launch { repo.relais.retirer(id) } }
             advertiser = BleAdvertiser(this@MeshService)
             scanner = BleScanner(this@MeshService)
             gattServer = BleGattServer(this@MeshService)
@@ -129,9 +138,17 @@ class MeshService : Service() {
                 while (isActive) {
                     delay(15_000)
                     relancerEnvois()
+                    router.relancer()
                     // Les clés ne partaient qu'à la première détection : si cet
                     // unique envoi échouait, aucune session ne s'ouvrait jamais
                     if (++tour % 4 == 0) diffuserNosCles()
+                    // Android ralentit puis coupe un scan qui dure (30 min), et certains
+                    // téléphones ne remontent plus les annonces répétées : le radar
+                    // restait figé sur la première position. Relancé toutes les 5 min.
+                    if (tour % 20 == 0 && EtatMesh.bluetoothActif.value == true) {
+                        runCatching { scanner.start() }
+                        repo.relais.purger(System.currentTimeMillis())
+                    }
                 }
             }
             EtatMesh.identifiant.value = localShortId
@@ -145,7 +162,7 @@ class MeshService : Service() {
             // L'interface lit les appareils vus directement, rafraîchis toutes les 5 s
             scope.launch {
                 while (isActive) {
-                    EtatMesh.majPairs(nodeTracker.getActiveNodes().map {
+                    EtatMesh.majPairs(nodeTracker.getActiveNodes(withinMs = 60_000).map {
                         EtatMesh.PairVu(it.shortId, it.macAddress, it.rssi, it.lastSeenAt)
                     })
                     delay(5_000)
@@ -167,11 +184,32 @@ class MeshService : Service() {
      * Un seul envoi GATT à la fois : deux connexions simultanées vers le même
      * téléphone se gênaient, et le premier de deux messages rapides se perdait.
      */
-    private val fileBle = kotlinx.coroutines.channels.Channel<Pair<String, ByteArray>>(capacity = 200)
+    private class EnvoiBle(val adresse: String, val octets: ByteArray, val cle: String, val apresSucces: (() -> Unit)?)
+
+    private val fileBle = kotlinx.coroutines.channels.Channel<EnvoiBle>(capacity = kotlinx.coroutines.channels.Channel.UNLIMITED)
+
+    /** Envois déjà dans la file : un même paquet vers une même adresse n'y entre qu'une fois. */
+    private val enFile = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    /**
+     * Adresses qui viennent d'échouer : téléphone parti ou Bluetooth coupé.
+     * Pendant 15 s on n'y envoie plus rien, sinon chaque essai bloquait la
+     * file plusieurs secondes et tous les autres messages prenaient du retard.
+     */
+    private val echecs = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    private fun mettreEnFile(adresse: String, octets: ByteArray, id: String, apresSucces: (() -> Unit)? = null) {
+        val cle = "$adresse|$id"
+        if (!enFile.add(cle)) return
+        fileBle.trySend(EnvoiBle(adresse, octets, cle, apresSucces))
+    }
 
     private fun lancerFileBle() = scope.launch {
-        for ((adresse, octets) in fileBle) {
-            val ok = withTimeoutOrNull(20_000) {
+        for (envoi in fileBle) {
+            val adresse = envoi.adresse
+            val echecRecent = echecs[adresse]?.let { System.currentTimeMillis() - it < 15_000 } == true
+            if (echecRecent) { enFile.remove(envoi.cle); continue }
+            val ok = withTimeoutOrNull(12_000) {
                 suspendCancellableCoroutine<Boolean> { cont ->
                     val client = BleGattClient(this@MeshService, adresse)
                     client.onSendComplete = { succes ->
@@ -181,10 +219,17 @@ class MeshService : Service() {
                     // Délai dépassé : sans ça la connexion restait ouverte et
                     // bloquait les envois suivants vers le même téléphone
                     cont.invokeOnCancellation { runCatching { client.disconnect() } }
-                    client.send(octets)
+                    client.send(envoi.octets)
                 }
             } ?: false
-            if (!ok) EtatMesh.noter("Envoi Bluetooth vers $adresse échoué")
+            enFile.remove(envoi.cle)
+            if (ok) {
+                echecs.remove(adresse)
+                envoi.apresSucces?.invoke()
+            } else {
+                echecs[adresse] = System.currentTimeMillis()
+                EtatMesh.noter("Envoi Bluetooth vers $adresse échoué : nouvel essai plus tard")
+            }
         }
     }
 
@@ -195,7 +240,7 @@ class MeshService : Service() {
         if (!pret.isCompleted) return
         val maintenant = System.currentTimeMillis()
         repo.envois.purger(maintenant - RelayPacket.TTL_48H)
-        val actifs = nodeTracker.getActiveNodes()
+        val actifs = nodeTracker.getActiveNodes(withinMs = 30_000)
         if (actifs.isEmpty()) return
         repo.envois.tous().forEach { e ->
             if (!force && maintenant - e.dernierEssai < 30_000) return@forEach
@@ -203,7 +248,7 @@ class MeshService : Service() {
             val cibles = if (direct != null) listOf(direct.macAddress)
                          else nodeTracker.getBestRelays(localShortId, 3).map { it.macAddress }
             if (cibles.isEmpty()) return@forEach
-            cibles.forEach { fileBle.trySend(it to e.paquet) }
+            cibles.forEach { mettreEnFile(it, e.paquet, e.id) }
             repo.envois.noterEssai(e.id, maintenant)
         }
     }
@@ -295,7 +340,9 @@ class MeshService : Service() {
     private fun setupScanner() {
         scanner.onPeerDiscovered = { address, shortId, rssi ->
             if (shortId != localShortId) {
-                val isNew = !nodeTracker.getActiveNodes()
+                // Revenu après 30 s d'absence (Bluetooth coupé, parti puis revenu) :
+                // traité comme une nouvelle rencontre, clés et messages repartent
+                val isNew = !nodeTracker.getActiveNodes(withinMs = 30_000)
                     .any { it.shortId == shortId }
                 nodeTracker.seen(shortId, address, rssi)
                 peers[shortId] = address
@@ -434,7 +481,9 @@ class MeshService : Service() {
                     direction = "IN",
                     plaintext = plaintext,
                     trustLevelAtSend = getTrustLevel(packet.senderId),
-                    timestamp = System.currentTimeMillis(),
+                    // Heure d'écriture chez l'expéditeur : des messages arrivés dans le
+                    // désordre (relais, renvois) s'affichent dans l'ordre où ils ont été écrits
+                    timestamp = minOf(packet.createdAt, System.currentTimeMillis()),
                     delivered = true
                 )
             )
@@ -516,7 +565,7 @@ class MeshService : Service() {
             signature = signPayload(message.id.toByteArray()),
             ttl = RelayPacket.MAX_HOPS
         )
-        val direct = nodeTracker.getActiveNodes().firstOrNull { it.shortId == message.senderId }
+        val direct = nodeTracker.getActiveNodes(withinMs = 30_000).firstOrNull { it.shortId == message.senderId }
         val cibles = if (direct != null) listOf(direct.macAddress)
                      else nodeTracker.getBestRelays(localShortId, SprayAndWait.SPRAY_COPIES).map { it.macAddress }
         cibles.forEach { sendPacketTo(it, ack) }
@@ -531,7 +580,7 @@ class MeshService : Service() {
 
     /** Nos clés vers un contact : directement s'il est à portée, sinon par les relais. */
     private suspend fun envoyerNosCles(contact: String) {
-        val direct = nodeTracker.getActiveNodes().firstOrNull { it.shortId == contact }
+        val direct = nodeTracker.getActiveNodes(withinMs = 30_000).firstOrNull { it.shortId == contact }
         val cibles = if (direct != null) listOf(direct.macAddress)
                      else nodeTracker.getBestRelays(localShortId, 3).map { it.macAddress }
         if (cibles.isEmpty()) return
@@ -541,7 +590,7 @@ class MeshService : Service() {
 
     /** Nos clés à chaque voisin direct, régulièrement. */
     private suspend fun diffuserNosCles() {
-        val voisins = nodeTracker.getActiveNodes(withinMs = 60_000)
+        val voisins = nodeTracker.getActiveNodes(withinMs = 30_000)
         if (voisins.isEmpty()) return
         val packet = gossip.createGossipPacket(localShortId, session.createPreKeyBundle(avecCleUnique = false))
         voisins.forEach { sendPacketTo(it.macAddress, packet) }
@@ -597,7 +646,11 @@ class MeshService : Service() {
 
     private fun sendPacketTo(address: String, packet: RelayPacket) {
         val bytes = serializePacket(packet) ?: return
-        fileBle.trySend(address to bytes)
+        val destinataire = packet.recipientId
+        mettreEnFile(address, bytes, packet.id) {
+            // Écrit chez son destinataire lui-même : la copie gardée ne sert plus
+            if (destinataire != null && nodeTracker.getMacAddress(destinataire) == address) router.livre(packet.id)
+        }
     }
 
     // ─── Helpers ─────────────────────────────────────────────

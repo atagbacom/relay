@@ -72,7 +72,7 @@ class NodeTracker {
         excludeShortId: String,
         count: Int = SprayAndWait.SPRAY_COPIES
     ): List<NodeInfo> {
-        val cutoff = System.currentTimeMillis() - 60_000  // 60 secondes
+        val cutoff = System.currentTimeMillis() - 30_000  // 30 secondes : au-delà l'adresse peut avoir changé
 
         return nodes.values
             .filter { it.shortId != excludeShortId }
@@ -90,6 +90,14 @@ class NodeTracker {
     fun getMacAddress(shortId: String): String? {
         return nodes[shortId]?.macAddress
     }
+
+    /**
+     * Adresse d'un pair vu il y a moins de [withinMs] : au-delà, l'adresse a
+     * pu changer (Bluetooth coupé puis rallumé) ou le pair est parti, et un
+     * envoi direct échouerait.
+     */
+    fun adresseRecente(shortId: String, withinMs: Long = 30_000): String? =
+        nodes[shortId]?.takeIf { System.currentTimeMillis() - it.lastSeenAt < withinMs }?.macAddress
 
     /**
      * Retourne tous les nœuds actifs récemment.
