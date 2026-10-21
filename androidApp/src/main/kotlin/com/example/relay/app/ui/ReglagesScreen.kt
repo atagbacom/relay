@@ -5,6 +5,7 @@ import android.net.Uri
 import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -115,6 +116,41 @@ fun ReglagesScreen(
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.padding(top = 10.dp).fillMaxWidth().height(48.dp)
             ) { Text("Diagnostic détaillé") }
+        }
+
+        Bloc("Batterie") {
+            val choix by viewModel.choixBatterie.collectAsState()
+            val niveau by viewModel.batteryLevel.collectAsState()
+            val mode by viewModel.batteryMode.collectAsState()
+            Text(
+                "Batterie à $niveau % · mode ${when (mode) { "CRITICAL" -> "économie maximale"; "LOW" -> "économie"; else -> "normal" }}",
+                style = MaterialTheme.typography.bodyLarge
+            )
+            listOf(
+                Triple("AUTO", "Automatique", "Économie à 30 %, économie maximale à 15 %"),
+                Triple("ECONOMIE", "Économie", "Scan et annonce plus espacés : appareils découverts un peu moins vite"),
+                Triple("ECONOMIE_MAX", "Économie maximale", "Pour durer des jours : relais limité, découverte lente"),
+            ).forEach { (code, titre, detail) ->
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 56.dp)
+                        .selectable(
+                            selected = choix == code,
+                            onClick = { viewModel.choisirBatterie(code) },
+                            role = androidx.compose.ui.semantics.Role.RadioButton
+                        )
+                        .padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    RadioButton(selected = choix == code, onClick = null)
+                    Column {
+                        Text(titre, style = MaterialTheme.typography.bodyLarge)
+                        Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
         }
 
         Bloc("Relais en arrière-plan") {

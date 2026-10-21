@@ -34,6 +34,12 @@ object EtatMesh {
     val serveur = MutableStateFlow("pas démarré")
     val identifiant = MutableStateFlow("")
 
+    /** Batterie en pourcentage et mode appliqué (FULL, LOW, CRITICAL), lus directement par l'écran. */
+    val batterie = MutableStateFlow(100)
+    val modeBatterie = MutableStateFlow("FULL")
+    /** Choix de l'utilisateur (AUTO, ECONOMIE, ECONOMIE_MAX), suivi par le service. */
+    val choixBatterie = MutableStateFlow("AUTO")
+
     /** Quelqu'un vient de nous vérifier : l'interface demande de comparer les mots. */
     val verificationRecue = MutableStateFlow<com.relay.app.crypto.VerificationMutuelle.Recue?>(null)
 

@@ -50,6 +50,9 @@ class BleAdvertiser(private val context: Context) {
      *
      * @param shortId Notre identifiant court (8 chars hex)
      */
+    /** Fréquence d'annonce (AdvertiseSettings), réglée par le mode batterie. */
+    var modeAnnonce: Int = AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY
+
     fun start(shortId: String) {
         val manager = context.getSystemService(Context.BLUETOOTH_SERVICE)
                 as BluetoothManager
@@ -65,7 +68,7 @@ class BleAdvertiser(private val context: Context) {
         stop()
 
         val settings = AdvertiseSettings.Builder()
-            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
+            .setAdvertiseMode(modeAnnonce)
             .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM)
             .setConnectable(true)      // Les pairs peuvent se connecter
             .setTimeout(0)             // Advertising continu

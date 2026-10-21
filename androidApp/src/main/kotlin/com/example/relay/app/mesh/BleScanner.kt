@@ -56,6 +56,9 @@ class BleScanner(private val context: Context) {
         }
     }
 
+    /** Intensité du scan (ScanSettings), réglée par le mode batterie. */
+    var modeScan: Int = ScanSettings.SCAN_MODE_LOW_LATENCY
+
     fun start() {
         val manager = context.getSystemService(Context.BLUETOOTH_SERVICE)
                 as BluetoothManager
@@ -70,7 +73,7 @@ class BleScanner(private val context: Context) {
             .build()
 
         val settings = ScanSettings.Builder()
-            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+            .setScanMode(modeScan)
             .build()
 
         val s = scanner
