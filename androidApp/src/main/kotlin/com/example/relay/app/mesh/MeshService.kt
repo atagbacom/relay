@@ -198,6 +198,15 @@ class MeshService : Service() {
 
     private val fileBle = kotlinx.coroutines.channels.Channel<EnvoiBle>(capacity = kotlinx.coroutines.channels.Channel.UNLIMITED)
 
+    /**
+     * Passent avant tout le reste : alertes, accusés de réception, vérifications.
+     * Sur un réseau encombré, une alerte n'attend pas derrière des messages ordinaires.
+     */
+    private val filePrioritaire = kotlinx.coroutines.channels.Channel<EnvoiBle>(capacity = kotlinx.coroutines.channels.Channel.UNLIMITED)
+
+    /** Identifiants de nos alertes : prioritaires à chaque renvoi. */
+    private val idsPrioritaires = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
     /** Envois déjà dans la file : un même paquet vers une même adresse n'y entre qu'une fois. */
     private val enFile = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
@@ -208,14 +217,23 @@ class MeshService : Service() {
      */
     private val echecs = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
-    private fun mettreEnFile(adresse: String, octets: ByteArray, id: String, apresSucces: (() -> Unit)? = null) {
+    private fun mettreEnFile(
+        adresse: String, octets: ByteArray, id: String,
+        prioritaire: Boolean = false, apresSucces: (() -> Unit)? = null,
+    ) {
         val cle = "$adresse|$id"
         if (!enFile.add(cle)) return
-        fileBle.trySend(EnvoiBle(adresse, octets, cle, apresSucces))
+        (if (prioritaire) filePrioritaire else fileBle).trySend(EnvoiBle(adresse, octets, cle, apresSucces))
     }
 
     private fun lancerFileBle() = scope.launch {
-        for (envoi in fileBle) {
+        while (isActive) {
+            // La file prioritaire d'abord, sinon le premier envoi qui arrive
+            val envoi = filePrioritaire.tryReceive().getOrNull()
+                ?: kotlinx.coroutines.selects.select {
+                    filePrioritaire.onReceive { it }
+                    fileBle.onReceive { it }
+                }
             val adresse = envoi.adresse
             val echecRecent = echecs[adresse]?.let { System.currentTimeMillis() - it < 15_000 } == true
             if (echecRecent) { enFile.remove(envoi.cle); continue }
@@ -252,13 +270,13 @@ class MeshService : Service() {
         repo.envois.purger(maintenant - RelayPacket.TTL_48H)
         val actifs = nodeTracker.getActiveNodes(withinMs = 30_000)
         if (actifs.isEmpty()) return
-        repo.envois.tous().forEach { e ->
+        repo.envois.tous().sortedByDescending { it.id in idsPrioritaires }.forEach { e ->
             if (!force && maintenant - e.dernierEssai < 30_000) return@forEach
             val direct = actifs.firstOrNull { it.shortId == e.destinataire }
             val cibles = if (direct != null) listOf(direct.macAddress)
                          else nodeTracker.getBestRelays(localShortId, 3).map { it.macAddress }
             if (cibles.isEmpty()) return@forEach
-            cibles.forEach { mettreEnFile(it, e.paquet, e.id) }
+            cibles.forEach { mettreEnFile(it, e.paquet, e.id, prioritaire = e.id in idsPrioritaires) }
             repo.envois.noterEssai(e.id, maintenant)
         }
     }
@@ -421,6 +439,7 @@ class MeshService : Service() {
         scope.launch {
             pret.await()
             val id = UUID.randomUUID().toString()
+            if (plaintext.startsWith("ALERTE · ")) idsPrioritaires.add(id)
             // Enregistré d'abord : avant, un message sans session était perdu sans trace
             repo.saveMessage(
                 MessageEntity(
@@ -698,7 +717,8 @@ class MeshService : Service() {
     private fun sendPacketTo(address: String, packet: RelayPacket) {
         val bytes = serializePacket(packet) ?: return
         val destinataire = packet.recipientId
-        mettreEnFile(address, bytes, packet.id) {
+        val prioritaire = packet.type == PacketType.ACK || packet.type == PacketType.VERIFICATION || packet.id in idsPrioritaires
+        mettreEnFile(address, bytes, packet.id, prioritaire) {
             // Écrit chez son destinataire lui-même : la copie gardée ne sert plus
             if (destinataire != null && nodeTracker.getMacAddress(destinataire) == address) router.livre(packet.id)
         }
@@ -806,10 +826,25 @@ class MeshService : Service() {
     }
 
     private fun buildNotification(text: String): Notification {
+        val ouvrir = PendingIntent.getActivity(
+            this, 1, Intent(this, com.relay.app.MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        // Mode urgence depuis la notification, sans chercher l'application
+        val urgence = PendingIntent.getActivity(
+            this, 2,
+            Intent(this, com.relay.app.MainActivity::class.java)
+                .setAction(Notifications.ACTION_URGENCE)
+                .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Relay")
             .setContentText(text)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setSmallIcon(com.example.relay.R.drawable.ic_notification)
+            .setColor(0xFF13294B.toInt())
+            .setContentIntent(ouvrir)
+            .addAction(0, "Urgence", urgence)
             .setOngoing(true)
             .build()
     }

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Appui long sur l'icône de Relay : le mode urgence en un geste -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="urgence"
+        android:enabled="true"
+        android:icon="@drawable/ic_notification"
+        android:shortcutShortLabel="@string/raccourci_urgence"
+        android:shortcutLongLabel="@string/raccourci_urgence_long">
+        <intent
+            android:action="com.relay.app.URGENCE"
+            android:targetPackage="com.atagba.relay"
+            android:targetClass="com.relay.app.MainActivity" />
+    </shortcut>
+</shortcuts>

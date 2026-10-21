@@ -31,10 +31,12 @@ class MainActivity : ComponentActivity() {
 
     /** Conversation à ouvrir, demandée par une notification. */
     private val contactAOuvrir = mutableStateOf<String?>(null)
+    private val urgence = mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         contactAOuvrir.value = intent?.getStringExtra(Notifications.EXTRA_OUVRIR_CONTACT)
+        urgence.value = intent?.action == Notifications.ACTION_URGENCE
 
         enableEdgeToEdge()
         val fichierPlantage = RelayApplication.rapport(application)
@@ -47,7 +49,7 @@ class MainActivity : ComponentActivity() {
                     RapportPlantageScreen(r, onContinuer = { fichierPlantage.delete(); rapport = null })
                 } else {
                     PorteAutorisations(onPret = ::startMeshService) {
-                        RelayApp(viewModel, contactAOuvrir)
+                        RelayApp(viewModel, contactAOuvrir, urgence)
                     }
                 }
             }
@@ -57,6 +59,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         intent.getStringExtra(Notifications.EXTRA_OUVRIR_CONTACT)?.let { contactAOuvrir.value = it }
+        if (intent.action == Notifications.ACTION_URGENCE) urgence.value = true
     }
 
     private fun startMeshService() {
@@ -136,10 +139,15 @@ sealed class Screen {
     object Alerte : Screen()
     object Diagnostic : Screen()
     object Reglages : Screen()
+    object Urgence : Screen()
 }
 
 @Composable
-fun RelayApp(viewModel: MainViewModel, contactAOuvrir: MutableState<String?> = mutableStateOf(null)) {
+fun RelayApp(
+    viewModel: MainViewModel,
+    contactAOuvrir: MutableState<String?> = mutableStateOf(null),
+    urgence: MutableState<Boolean> = mutableStateOf(false),
+) {
     var screen by remember { mutableStateOf<Screen>(Screen.Reseau) }
     var onglet by remember { mutableStateOf(Onglet.RESEAU) }
     var qrReturnContact by remember { mutableStateOf<String?>(null) }
@@ -166,6 +174,14 @@ fun RelayApp(viewModel: MainViewModel, contactAOuvrir: MutableState<String?> = m
             onglet = Onglet.MESSAGES
             screen = Screen.Conversation(it)
             contactAOuvrir.value = null
+        }
+    }
+
+    // Mode urgence demandé par la notification ou le raccourci de l'icône
+    LaunchedEffect(urgence.value) {
+        if (urgence.value) {
+            screen = Screen.Urgence
+            urgence.value = false
         }
     }
 
@@ -236,6 +252,11 @@ fun RelayApp(viewModel: MainViewModel, contactAOuvrir: MutableState<String?> = m
                         qrReturnContact = s.contactId
                         screen = Screen.Qr
                     }
+                )
+
+                is Screen.Urgence -> UrgenceScreen(
+                    viewModel = viewModel,
+                    onBack = { versOnglet(Onglet.RESEAU) }
                 )
 
                 is Screen.Alerte -> AlerteScreen(

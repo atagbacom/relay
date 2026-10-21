@@ -19,6 +19,8 @@ object Notifications {
     private const val ID_BLUETOOTH = 9001
     /** Extra de l'intent : identifiant du contact dont ouvrir la conversation. */
     const val EXTRA_OUVRIR_CONTACT = "ouvrir_contact"
+    /** Action de l'intent du raccourci et de la notification « Urgence ». */
+    const val ACTION_URGENCE = "com.relay.app.URGENCE"
     private const val PREFIXE_ALERTE = "ALERTE · "
 
     fun creerCanaux(context: Context) {

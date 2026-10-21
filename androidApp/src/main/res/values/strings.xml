@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">Relay</string>
+    <string name="raccourci_urgence">Urgence</string>
+    <string name="raccourci_urgence_long">Envoyer une alerte</string>
 </resources>
