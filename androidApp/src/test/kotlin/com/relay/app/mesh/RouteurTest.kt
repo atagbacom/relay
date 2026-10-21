@@ -123,4 +123,13 @@ class RouteurTest {
         r.onNewPeerAvailable("05eeeeee", "33:33:33:33:33:33")
         assertEquals(listOf("cles-d" to listOf("33:33:33:33:33:33")), envoyes)
     }
+
+    @Test
+    fun `un appareil revenu avec une nouvelle adresse est reconnu par sa connexion`() {
+        val t = NodeTracker()
+        assertTrue("inconnu jusque-là : nouvelle rencontre", t.vuParConnexion("05dddddd", "44:44:44:44:44:44"))
+        assertEquals("44:44:44:44:44:44", t.adresseRecente("05dddddd"))
+        assertFalse("déjà à portée : rien à relancer", t.vuParConnexion("05dddddd", "55:55:55:55:55:55"))
+        assertEquals("44:44:44:44:44:44", t.getMacAddress("05dddddd"))
+    }
 }

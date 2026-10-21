@@ -45,6 +45,29 @@ class NodeTracker {
     }
 
     /**
+     * Un paquet vient d'arriver directement de ce pair, par une connexion
+     * Bluetooth : il est donc là, à cette adresse. Utile quand le scan ne l'a
+     * pas encore reconnu (après un Bluetooth coupé, il a changé d'adresse et
+     * certains téléphones remontent rarement l'identifiant).
+     *
+     * Retourne vrai si le pair n'était pas considéré à portée : c'est alors
+     * une nouvelle rencontre. Si le scan l'a vu il y a moins de 30 s, on
+     * garde son adresse de scan, la plus sûre.
+     */
+    fun vuParConnexion(shortId: String, macAddress: String): Boolean {
+        val maintenant = System.currentTimeMillis()
+        val existing = nodes[shortId]
+        if (existing != null && maintenant - existing.lastSeenAt < 30_000) return false
+        if (existing != null) {
+            existing.macAddress = macAddress
+            existing.lastSeenAt = maintenant
+        } else {
+            nodes[shortId] = NodeInfo(shortId, macAddress, rssi = -80)
+        }
+        return true
+    }
+
+    /**
      * Marque un nœud comme ayant échangé ses prekeys.
      * Ces nœuds sont préférés comme relais — plus fiables.
      */

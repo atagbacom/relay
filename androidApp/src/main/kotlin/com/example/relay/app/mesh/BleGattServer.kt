@@ -31,7 +31,8 @@ class BleGattServer(private val context: Context) {
     private val reassembleur = Reassembleur()
 
     // Callback quand un paquet complet est reçu
-    var onPacketReceived: ((ByteArray) -> Unit)? = null
+    /** Paquet complet reçu, avec l'adresse Bluetooth de l'appareil qui l'a écrit. */
+    var onPacketReceived: ((ByteArray, String) -> Unit)? = null
 
     private val serverCallback = object : BluetoothGattServerCallback() {
 
@@ -69,7 +70,7 @@ class BleGattServer(private val context: Context) {
 
             // Rassemble les fragments jusqu'à la taille annoncée par l'en-tête
             reassembleur.ajouter(device.address, value)?.let { paquet ->
-                onPacketReceived?.invoke(paquet)
+                onPacketReceived?.invoke(paquet, device.address)
             }
 
             if (responseNeeded) {

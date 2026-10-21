@@ -306,6 +306,8 @@ Chaque entrée suit le même schéma : **constat**, **cause**, **solution**, **l
 
 > **Leçon.** Dans un réseau qui se coupe, rien ne doit être lâché sur un seul essai : on garde jusqu'à la preuve de livraison.
 
+**Complément : le message qui attend une action.** A écrit à B éteint ; B se rallume, rien n'arrive, jusqu'à ce que B écrive à A ou qu'un scan de QR ait lieu. Cause : en rallumant le Bluetooth, B change d'adresse, et A ne le reconnaissait qu'en lisant son identifiant dans la réponse au scan, que certains téléphones remontent rarement. Un paquet reçu directement de B ne servait pas à constater son retour. Désormais, tout paquet arrivé directement de son expéditeur (nombre de sauts intact) prouve qu'il est là, donne sa nouvelle adresse et relance aussitôt ce qui l'attend.
+
 ---
 
 ## Points ouverts

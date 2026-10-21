@@ -349,22 +349,36 @@ class MeshService : Service() {
 
                 if (isNew) {
                     EtatMesh.noter("Appareil Relay découvert : $shortId (signal $rssi dBm)")
-                    router.onNewPeerAvailable(shortId, address)
-                    scope.launch { sendOurPreKeys(address) }
-                    scope.launch { delay(1_500); relancerEnvois(force = true) }
-                    updateNotification(
-                        "Mesh actif — ${nodeTracker.activeCount()} pairs"
-                    )
-                    broadcastPeerCount()
+                    rencontre(shortId, address)
                 }
             }
         }
     }
 
+    /** Un pair arrive à portée : nos clés, ce qu'on garde pour lui, nos messages en attente. */
+    private fun rencontre(shortId: String, address: String) {
+        router.onNewPeerAvailable(shortId, address)
+        scope.launch { sendOurPreKeys(address) }
+        scope.launch { delay(1_500); relancerEnvois(force = true) }
+        updateNotification("Mesh actif — ${nodeTracker.activeCount()} pairs")
+        broadcastPeerCount()
+    }
+
     private fun setupGattServer() {
-        gattServer.onPacketReceived = { bytes ->
+        gattServer.onPacketReceived = { bytes, adresse ->
             scope.launch {
                 val packet = deserializePacket(bytes) ?: return@launch
+                // Paquet à son nombre de sauts maximal : il vient directement de
+                // son expéditeur. Avant, un téléphone revenu (Bluetooth coupé, donc
+                // nouvelle adresse) n'était reconnu qu'au scan : ses messages en
+                // attente restaient bloqués jusqu'à ce qu'il nous écrive ET qu'un
+                // autre événement relance les envois.
+                if (packet.ttl == RelayPacket.MAX_HOPS && packet.senderId != localShortId &&
+                    nodeTracker.vuParConnexion(packet.senderId, adresse)) {
+                    EtatMesh.noter("${packet.senderId} est de retour (reconnu par sa connexion)")
+                    peers[packet.senderId] = adresse
+                    rencontre(packet.senderId, adresse)
+                }
                 router.handle(packet)
             }
         }
