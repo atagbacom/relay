@@ -41,9 +41,77 @@ class MeshRouter(
     private val enAttente = LinkedHashMap<String, RelayPacket>()
     private val maxEnAttente = 200
 
+    /** Dernière tentative de livraison de chaque paquet gardé. */
+    private val tentatives = HashMap<String, Long>()
+
+    /**
+     * Messages dont on a vu passer l'accusé : livrés, inutile de les garder
+     * ou de les relayer encore (les autres copies sont nettoyées).
+     */
+    private val livres = object : LinkedHashMap<String, Boolean>() {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Boolean>?) = size > 2000
+    }
+
+    /**
+     * Dernières clés publiées par chaque appareil, gardées pour les remettre
+     * à ceux qui ne l'ont jamais croisé : sans elles, impossible de lui écrire.
+     */
+    private val clesConnues = object : LinkedHashMap<String, RelayPacket>() {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, RelayPacket>?) = size > 30
+    }
+
+    /** Un paquet est gardé : à recopier en base pour survivre à un redémarrage. */
+    var onGarde: ((RelayPacket) -> Unit)? = null
+    /** Un paquet gardé n'est plus utile (livré, accusé ou expiré). */
+    var onRetrait: ((String) -> Unit)? = null
+
+    /** Recharge les paquets gardés avant un redémarrage. */
+    @Synchronized
+    fun restaurer(paquets: List<RelayPacket>) {
+        paquets.filter { it.isValid() }.forEach {
+            enAttente[it.id] = it
+            bloom.add(it.id)
+        }
+    }
+
+    /** Le destinataire a bien reçu le paquet (écriture Bluetooth confirmée) : on le lâche. */
+    @Synchronized
+    fun livre(packetId: String) {
+        if (enAttente.remove(packetId) != null) {
+            tentatives.remove(packetId)
+            onRetrait?.invoke(packetId)
+        }
+    }
+
+    /** Adresse du destinataire s'il est à portée en ce moment (vu il y a moins de 30 s). */
+    private fun adresseProche(shortId: String?): String? =
+        shortId?.let { nodeTracker.adresseRecente(it) }
+
+    /**
+     * Toutes les 15 s : chaque paquet gardé dont le destinataire est à portée
+     * repart vers lui, au plus toutes les 20 s, jusqu'à la confirmation.
+     */
+    @Synchronized
+    fun relancer(maintenant: Long = System.currentTimeMillis()) {
+        retirerExpires()
+        enAttente.values.toList().forEach { p ->
+            val mac = adresseProche(p.recipientId) ?: return@forEach
+            if (maintenant - (tentatives[p.id] ?: 0L) < 20_000) return@forEach
+            tentatives[p.id] = maintenant
+            onPacketToRelay?.invoke(p.decrementTtl(), listOf(mac))
+        }
+    }
+
+    private fun retirerExpires() {
+        enAttente.values.filter { !it.isValid() }.map { it.id }.forEach {
+            enAttente.remove(it); tentatives.remove(it); onRetrait?.invoke(it)
+        }
+    }
+
     /**
      * Point d'entrée unique — traite chaque paquet entrant.
      */
+    @Synchronized
     fun handle(packet: RelayPacket) {
 
         // ── Déduplication ──────────────────────────────────
@@ -55,6 +123,9 @@ class MeshRouter(
             return
         }
         bloom.add(packet.id)
+
+        // ── Déjà livré (accusé vu passer) ─────────────────
+        if (packet.type != PacketType.ACK && livres.containsKey(packet.id)) return
 
         // ── Expiration ─────────────────────────────────────
         if (!packet.isValid()) {
@@ -82,11 +153,9 @@ class MeshRouter(
 
     private fun handleMessage(packet: RelayPacket) {
         val isForUs = packet.recipientId == localShortId
-        val hasDirectContact = packet.recipientId?.let {
-            nodeTracker.getMacAddress(it) != null
-        } ?: false
+        val adresseDirecte = adresseProche(packet.recipientId)
 
-        when (val action = sprayAndWait.decide(packet, isForUs, hasDirectContact)) {
+        when (val action = sprayAndWait.decide(packet, isForUs, adresseDirecte != null)) {
 
             is SprayAction.DELIVER -> {
                 Log.d("MeshRouter", "Message livré de ${packet.senderId}")
@@ -94,32 +163,25 @@ class MeshRouter(
             }
 
             is SprayAction.FORWARD_DIRECT -> {
-                // On a le destinataire en vue — livraison directe
-                val recipientMac = packet.recipientId?.let {
-                    nodeTracker.getMacAddress(it)
-                }
-                if (recipientMac != null) {
-                    Log.d("MeshRouter", "Livraison directe à ${packet.recipientId}")
-                    onPacketToRelay?.invoke(packet.decrementTtl(), listOf(recipientMac))
-                    nodeTracker.recordRelay(packet.recipientId!!)
-                }
+                // Destinataire en vue : livraison directe. Le paquet reste gardé
+                // tant que l'écriture n'est pas confirmée (avant : un échec le perdait)
+                garder(packet)
+                tentatives[packet.id] = System.currentTimeMillis()
+                onPacketToRelay?.invoke(packet.decrementTtl(), listOf(adresseDirecte!!))
+                nodeTracker.recordRelay(packet.recipientId!!)
             }
 
             is SprayAction.SPRAY -> {
-                // Distribue les copies aux meilleurs relais
+                // Gardé pour le destinataire, et des copies aux meilleurs relais
+                garder(packet)
                 val relays = nodeTracker.getBestRelays(
                     excludeShortId = packet.senderId,
                     count = action.copies
                 )
                 if (relays.isNotEmpty()) {
-                    val addresses = relays.map { it.macAddress }
-                    Log.d("MeshRouter",
-                        "Spray ${action.copies} copies vers ${relays.size} relais")
-                    onPacketToRelay?.invoke(packet.decrementTtl(), addresses)
+                    Log.d("MeshRouter", "Spray ${action.copies} copies vers ${relays.size} relais")
+                    onPacketToRelay?.invoke(packet.decrementTtl(), relays.map { it.macAddress })
                     relays.forEach { nodeTracker.recordRelay(it.shortId) }
-                } else {
-                    // Personne à qui le passer pour l'instant : on le garde
-                    garder(packet)
                 }
             }
 
@@ -132,6 +194,8 @@ class MeshRouter(
     }
 
     private fun handleGossip(packet: RelayPacket) {
+        clesConnues.remove(packet.senderId)
+        clesConnues[packet.senderId] = packet
         // Met à jour le tracker
         nodeTracker.markPreKeyExchanged(packet.senderId)
         onPreKeyReceived?.invoke(packet)
@@ -172,26 +236,41 @@ class MeshRouter(
         }
     }
 
+    @Synchronized
     private fun handleAck(packet: RelayPacket) {
+        // Le message accusé est livré : chaque relais qui voit passer l'accusé
+        // jette sa copie et ne la relaiera plus
+        val accuse = String(packet.payload, Charsets.UTF_8)
+        livres[accuse] = true
+        livre(accuse)
+
         if (packet.recipientId == localShortId) {
-            // Le payload porte l'identifiant du message accusé
-            onAckReceived?.invoke(String(packet.payload, Charsets.UTF_8))
+            onAckReceived?.invoke(accuse)
+            return
+        }
+        // Vers l'expéditeur s'il est là ; sinon gardé pour lui, et quelques
+        // copies aux voisins pour qu'ils nettoient aussi
+        val adresse = adresseProche(packet.recipientId)
+        garder(packet)
+        if (adresse != null) {
+            tentatives[packet.id] = System.currentTimeMillis()
+            onPacketToRelay?.invoke(packet.decrementTtl(), listOf(adresse))
         } else {
-            // Relaie l'ACK vers l'expéditeur original, ou le garde s'il n'est pas à portée
-            val senderMac = nodeTracker.getMacAddress(packet.recipientId ?: return)
-            if (senderMac != null) {
-                onPacketToRelay?.invoke(packet.decrementTtl(), listOf(senderMac))
-            } else {
-                garder(packet)
-            }
+            val voisins = nodeTracker.getBestRelays(excludeShortId = packet.senderId, count = 3).map { it.macAddress }
+            if (voisins.isNotEmpty()) onPacketToRelay?.invoke(packet.decrementTtl(), voisins)
         }
     }
 
     @Synchronized
     private fun garder(packet: RelayPacket) {
         if (packet.recipientId == null || packet.ttl <= 1) return
+        if (enAttente.containsKey(packet.id)) return
         enAttente[packet.id] = packet
-        while (enAttente.size > maxEnAttente) enAttente.remove(enAttente.keys.first())
+        onGarde?.invoke(packet)
+        while (enAttente.size > maxEnAttente) {
+            val plusAncien = enAttente.keys.first()
+            enAttente.remove(plusAncien); tentatives.remove(plusAncien); onRetrait?.invoke(plusAncien)
+        }
     }
 
     /** Nombre de paquets d'autres appareils gardés pour être livrés plus tard. */
@@ -206,12 +285,17 @@ class MeshRouter(
     @Synchronized
     fun onNewPeerAvailable(shortId: String, macAddress: String) {
         Log.d("MeshRouter", "Nouveau pair disponible : $shortId")
-        val pourLui = enAttente.values.filter { it.recipientId == shortId && it.isValid() }
-        pourLui.forEach { p ->
-            enAttente.remove(p.id)
+        retirerExpires()
+        // Les clés des autres appareils, pour qu'il puisse leur écrire
+        clesConnues.values.filter { it.senderId != shortId && it.isValid() && it.ttl > 1 }
+            .takeLast(20)
+            .forEach { onPacketToRelay?.invoke(it.decrementTtl(), listOf(macAddress)) }
+
+        // Envoyés tout de suite, mais gardés jusqu'à la confirmation de livraison
+        val maintenant = System.currentTimeMillis()
+        enAttente.values.filter { it.recipientId == shortId }.forEach { p ->
+            tentatives[p.id] = maintenant
             onPacketToRelay?.invoke(p.decrementTtl(), listOf(macAddress))
         }
-        // Les paquets expirés ne servent plus à rien
-        enAttente.values.removeAll { !it.isValid() }
     }
 }

@@ -26,7 +26,7 @@ class BleGattClient(
         /** MTU demandée : valeur maximale de 512 octets + en-tête ATT. */
         private const val MTU_DEMANDEE = Fragmentation.VALEUR_MAX + 5
         /** Au-delà, l'envoi est abandonné (pair parti, radio bloquée…). */
-        private const val DELAI_MAX_MS = 15_000L
+        private const val DELAI_MAX_MS = 10_000L
     }
 
     private var gatt: BluetoothGatt? = null

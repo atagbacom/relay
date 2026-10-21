@@ -30,6 +30,7 @@ class RelayRepository(context: Context) {
     private val contactDao = db.contactDao()
     private val messageDao = db.messageDao()
     val envois = db.envoiDao()
+    val relais = db.relaisDao()
 
     // ─── Identité ────────────────────────────────────────────
 
@@ -95,6 +96,8 @@ class RelayRepository(context: Context) {
     suspend fun markDelivered(messageId: String) {
         messageDao.markDelivered(messageId)
     }
+
+    suspend fun nonRemis(contactShortId: String): List<MessageEntity> = messageDao.nonRemis(contactShortId)
 
     // ─── Sessions crypto ─────────────────────────────────────
 

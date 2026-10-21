@@ -29,31 +29,45 @@ object Fragmentation {
  * Rassemble les fragments reçus de chaque appareil jusqu'à la taille
  * annoncée par l'en-tête du paquet (PacketCodec).
  */
-class Reassembleur {
-    private val tampons = mutableMapOf<String, ByteArray>()
+class Reassembleur(private val horloge: () -> Long = System::currentTimeMillis) {
+    private class Tampon(val octets: ByteArray, val depuis: Long)
+    private val tampons = mutableMapOf<String, Tampon>()
 
     /**
      * Ajoute un fragment reçu de [source]. Retourne le paquet complet quand
      * il l'est, null sinon. Un en-tête invalide ou un paquet plus long
      * qu'annoncé vide le tampon de cette source.
+     *
+     * Un envoi interrompu laissait un début de paquet dans le tampon, et le
+     * paquet suivant s'y collait puis était jeté. Désormais un fragment qui
+     * commence par un en-tête valide ouvre un nouveau paquet, et un tampon
+     * resté plus de [EXPIRATION_MS] sans suite est oublié.
      */
     @Synchronized
     fun ajouter(source: String, fragment: ByteArray): ByteArray? {
-        val tout = (tampons[source] ?: ByteArray(0)) + fragment
+        val maintenant = horloge()
+        val ancien = tampons[source]?.takeIf { maintenant - it.depuis <= EXPIRATION_MS }
+        val nouveauPaquet = ancien != null && PacketCodec.tailleAnnoncee(fragment) != null
+        val tout = if (ancien == null || nouveauPaquet) fragment else ancien.octets + fragment
+        val depuis = if (ancien == null || nouveauPaquet) maintenant else ancien.depuis
         if (tout.size < PacketCodec.TAILLE_EN_TETE) {
-            tampons[source] = tout
+            tampons[source] = Tampon(tout, depuis)
             return null
         }
         val attendue = PacketCodec.tailleAnnoncee(tout)
         return when {
             attendue == null || tout.size > attendue -> { tampons.remove(source); null }
             tout.size == attendue -> { tampons.remove(source); tout }
-            else -> { tampons[source] = tout; null }
+            else -> { tampons[source] = Tampon(tout, depuis); null }
         }
     }
 
     @Synchronized
     fun oublier(source: String) {
         tampons.remove(source)
+    }
+
+    companion object {
+        const val EXPIRATION_MS = 10_000L
     }
 }

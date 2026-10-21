@@ -61,7 +61,33 @@ data class EnvoiEntity(
     val dernierEssai: Long = 0,
 )
 
+/**
+ * Paquet d'un autre appareil gardé pour son destinataire (relais) : survit à
+ * l'arrêt de l'application ou du Bluetooth, jusqu'à livraison ou expiration.
+ */
+@Entity(tableName = "relais")
+data class RelaisEntity(
+    @PrimaryKey val id: String,
+    val paquet: ByteArray,
+    val expireA: Long,
+)
+
 // ─── DAOs ──────────────────────────────────────────────────
+
+@Dao
+interface RelaisDao {
+    @Query("SELECT * FROM relais WHERE expireA > :maintenant")
+    suspend fun valides(maintenant: Long): List<RelaisEntity>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun garder(r: RelaisEntity)
+
+    @Query("DELETE FROM relais WHERE id = :id")
+    suspend fun retirer(id: String)
+
+    @Query("DELETE FROM relais WHERE expireA <= :maintenant")
+    suspend fun purger(maintenant: Long)
+}
 
 @Dao
 interface EnvoiDao {
@@ -79,6 +105,9 @@ interface EnvoiDao {
 
     @Query("DELETE FROM envois WHERE creeA < :avant")
     suspend fun purger(avant: Long)
+
+    @Query("SELECT * FROM envois WHERE destinataire = :destinataire")
+    suspend fun pour(destinataire: String): List<EnvoiEntity>
 }
 
 /** Appels synchrones : le protocole Signal les fait depuis Dispatchers.IO. */
@@ -142,13 +171,17 @@ interface MessageDao {
 
     @Query("UPDATE messages SET delivered = 1 WHERE id = :id")
     suspend fun markDelivered(id: String)
+
+    /** Messages envoyés à ce contact et pas encore accusés, du plus ancien au plus récent. */
+    @Query("SELECT * FROM messages WHERE contactShortId = :contactShortId AND direction = 'OUT' AND delivered = 0 ORDER BY timestamp ASC")
+    suspend fun nonRemis(contactShortId: String): List<MessageEntity>
 }
 
 // ─── Database ──────────────────────────────────────────────
 
 @Database(
-    entities = [IdentityEntity::class, ContactEntity::class, MessageEntity::class, SignalRecordEntity::class, EnvoiEntity::class],
-    version = 3,
+    entities = [IdentityEntity::class, ContactEntity::class, MessageEntity::class, SignalRecordEntity::class, EnvoiEntity::class, RelaisEntity::class],
+    version = 4,
     exportSchema = false
 )
 abstract class RelayDatabase : RoomDatabase() {
@@ -157,8 +190,20 @@ abstract class RelayDatabase : RoomDatabase() {
     abstract fun messageDao(): MessageDao
     abstract fun signalRecordDao(): SignalRecordDao
     abstract fun envoiDao(): EnvoiDao
+    abstract fun relaisDao(): RelaisDao
 
     companion object {
+        /** v4 : table relais (paquets d'autres appareils gardés pour leur destinataire). */
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `relais` (" +
+                        "`id` TEXT NOT NULL, `paquet` BLOB NOT NULL, `expireA` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`id`))"
+                )
+            }
+        }
+
         /** v3 : table envois (messages non accusés, renvoyés automatiquement). */
         private val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -190,7 +235,7 @@ abstract class RelayDatabase : RoomDatabase() {
                     context.applicationContext,
                     RelayDatabase::class.java,
                     "relay.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { INSTANCE = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { INSTANCE = it }
             }
         }
     }

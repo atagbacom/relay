@@ -265,6 +265,49 @@ Chaque entrée suit le même schéma : **constat**, **cause**, **solution**, **l
 
 > **Leçon.** Le nom affiché vient d'abord de celui qui regarde : on propose le nom annoncé, on ne l'impose pas.
 
+### 19. Régression : plus aucun message après la création du contact
+
+- **Constat.** Après les versions « un seul scan » et « réglages », plus aucun message ne passait entre deux téléphones, et la vérification n'arrivait pas non plus chez l'autre (d'où l'impression de devoir encore scanner deux fois).
+- **Causes trouvées** (sans téléphone sous la main, par lecture du code ; aucune n'apparaissait dans le diagnostic) :
+  - les clés de chiffrement n'étaient envoyées qu'une fois, à la toute première détection : si cet unique envoi Bluetooth échouait, aucune session ne s'ouvrait jamais ;
+  - sans session, le message était perdu sans trace : ni enregistré, ni signalé ;
+  - un envoi abandonné après délai laissait sa connexion Bluetooth ouverte, ce qui pouvait bloquer les suivants vers le même téléphone ;
+  - un paquet interrompu restait dans le tampon de réception et faisait jeter le paquet suivant ;
+  - un message déjà déchiffré avant un redémarrage n'était pas réacquitté : il restait « en attente » chez l'expéditeur.
+- **Solution.**
+  - clés renvoyées à chaque voisin toutes les minutes, et en retour dès qu'une session s'ouvre ;
+  - message toujours enregistré, mis en attente sans session, chiffré dès que les clés arrivent ;
+  - session renouvelée automatiquement si les messages restent sans accusé, avec les mêmes identifiants (pas de doublon) ;
+  - connexion fermée après délai, tampon de réception remis à zéro par un nouvel en-tête ou après 10 s ;
+  - toutes les erreurs de chiffrement, de déchiffrement et de clés écrites dans le journal du diagnostic.
+
+> **Leçon.** Une erreur qui ne va que dans les logs n'existe pas sur le terrain. Tout échec doit être visible là où l'utilisateur peut le lire.
+
+### 20. Essai à trois téléphones : le relais ne livrait pas un destinataire absent
+
+- **Constat** (essai réel à trois) : l'alerte passe, mais un message pour un destinataire absent au départ n'arrive jamais. Dès qu'un Bluetooth ou une application est coupé puis relancé, les messages arrivent en retard, dans le désordre, ou pas du tout. Le radar reste figé sur la première position.
+- **Causes.**
+  - le relais retirait sa copie dès le premier essai de livraison : un essai raté, et le message était perdu ; les renvois de l'expéditeur étaient ensuite ignorés comme doublons ;
+  - un appareil vu dans les 10 dernières minutes était considéré « à portée » : le relais tentait une livraison directe vers une adresse périmée, et c'était le seul essai ;
+  - les copies gardées n'existaient qu'en mémoire : couper l'application les effaçait ;
+  - un accusé de réception ne faisait pas jeter les autres copies du message ;
+  - chaque envoi vers un téléphone parti bloquait la file Bluetooth jusqu'à 20 s, et les messages suivants prenaient du retard ; la file pouvait aussi déborder et jeter des envois ;
+  - le message reçu était daté de son arrivée, pas de son écriture : des messages relayés ou renvoyés s'affichaient dans le désordre ;
+  - Android ralentit puis coupe un scan qui dure, et certains téléphones ne remontent plus les annonces répétées : la force du signal n'était plus mise à jour ;
+  - les clés d'un appareil ne voyageaient pas : sans les avoir croisé, on ne pouvait pas lui écrire.
+- **Solution.**
+  - le relais garde chaque copie en base jusqu'à la confirmation de livraison, l'accusé ou l'expiration (48 h), et la représente toutes les 20 s tant que le destinataire est à portée ;
+  - « à portée » veut dire vu il y a moins de 30 s ; un appareil revenu après 30 s d'absence est traité comme une nouvelle rencontre ;
+  - un accusé vu passer fait jeter la copie et bloque tout relais ultérieur du message ;
+  - file Bluetooth sans doublon, sans limite, et une adresse qui échoue est écartée 15 s ;
+  - message daté de son écriture ; scan relancé toutes les 5 minutes ;
+  - les relais retiennent les dernières clés de chaque appareil et les remettent à ceux qu'ils croisent ;
+  - 4 nouveaux tests du routeur.
+
+> **Leçon.** Dans un réseau qui se coupe, rien ne doit être lâché sur un seul essai : on garde jusqu'à la preuve de livraison.
+
+**Complément : le message qui attend une action.** A écrit à B éteint ; B se rallume, rien n'arrive, jusqu'à ce que B écrive à A ou qu'un scan de QR ait lieu. Cause : en rallumant le Bluetooth, B change d'adresse, et A ne le reconnaissait qu'en lisant son identifiant dans la réponse au scan, que certains téléphones remontent rarement. Un paquet reçu directement de B ne servait pas à constater son retour. Désormais, tout paquet arrivé directement de son expéditeur (nombre de sauts intact) prouve qu'il est là, donne sa nouvelle adresse et relance aussitôt ce qui l'attend.
+
 ---
 
 ## Points ouverts

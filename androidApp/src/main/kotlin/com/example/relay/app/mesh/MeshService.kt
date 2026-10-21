@@ -9,6 +9,7 @@ import com.relay.app.crypto.*
 import com.relay.app.model.*
 import com.relay.app.repository.RelayRepository
 import com.relay.app.storage.EnvoiEntity
+import com.relay.app.storage.RelaisEntity
 import com.relay.app.storage.MessageEntity
 import com.relay.app.storage.ContactEntity
 import kotlinx.coroutines.*
@@ -113,6 +114,14 @@ class MeshService : Service() {
 
 
             router = MeshRouter(localShortId, nodeTracker, batteryMonitor::shouldRelay)
+            // Copies gardées pour d'autres : rechargées, elles survivent à un redémarrage
+            router.restaurer(repo.relais.valides(System.currentTimeMillis()).mapNotNull { PacketCodec.decode(it.paquet) })
+            router.onGarde = { p ->
+                serializePacket(p)?.let { octets ->
+                    scope.launch { repo.relais.garder(RelaisEntity(p.id, octets, p.expiresAt)) }
+                }
+            }
+            router.onRetrait = { id -> scope.launch { repo.relais.retirer(id) } }
             advertiser = BleAdvertiser(this@MeshService)
             scanner = BleScanner(this@MeshService)
             gattServer = BleGattServer(this@MeshService)
@@ -125,9 +134,21 @@ class MeshService : Service() {
             pret.complete(Unit)
             lancerFileBle()
             scope.launch {
+                var tour = 0
                 while (isActive) {
                     delay(15_000)
                     relancerEnvois()
+                    router.relancer()
+                    // Les clés ne partaient qu'à la première détection : si cet
+                    // unique envoi échouait, aucune session ne s'ouvrait jamais
+                    if (++tour % 4 == 0) diffuserNosCles()
+                    // Android ralentit puis coupe un scan qui dure (30 min), et certains
+                    // téléphones ne remontent plus les annonces répétées : le radar
+                    // restait figé sur la première position. Relancé toutes les 5 min.
+                    if (tour % 20 == 0 && EtatMesh.bluetoothActif.value == true) {
+                        runCatching { scanner.start() }
+                        repo.relais.purger(System.currentTimeMillis())
+                    }
                 }
             }
             EtatMesh.identifiant.value = localShortId
@@ -141,7 +162,7 @@ class MeshService : Service() {
             // L'interface lit les appareils vus directement, rafraîchis toutes les 5 s
             scope.launch {
                 while (isActive) {
-                    EtatMesh.majPairs(nodeTracker.getActiveNodes().map {
+                    EtatMesh.majPairs(nodeTracker.getActiveNodes(withinMs = 60_000).map {
                         EtatMesh.PairVu(it.shortId, it.macAddress, it.rssi, it.lastSeenAt)
                     })
                     delay(5_000)
@@ -163,21 +184,52 @@ class MeshService : Service() {
      * Un seul envoi GATT à la fois : deux connexions simultanées vers le même
      * téléphone se gênaient, et le premier de deux messages rapides se perdait.
      */
-    private val fileBle = kotlinx.coroutines.channels.Channel<Pair<String, ByteArray>>(capacity = 200)
+    private class EnvoiBle(val adresse: String, val octets: ByteArray, val cle: String, val apresSucces: (() -> Unit)?)
+
+    private val fileBle = kotlinx.coroutines.channels.Channel<EnvoiBle>(capacity = kotlinx.coroutines.channels.Channel.UNLIMITED)
+
+    /** Envois déjà dans la file : un même paquet vers une même adresse n'y entre qu'une fois. */
+    private val enFile = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    /**
+     * Adresses qui viennent d'échouer : téléphone parti ou Bluetooth coupé.
+     * Pendant 15 s on n'y envoie plus rien, sinon chaque essai bloquait la
+     * file plusieurs secondes et tous les autres messages prenaient du retard.
+     */
+    private val echecs = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    private fun mettreEnFile(adresse: String, octets: ByteArray, id: String, apresSucces: (() -> Unit)? = null) {
+        val cle = "$adresse|$id"
+        if (!enFile.add(cle)) return
+        fileBle.trySend(EnvoiBle(adresse, octets, cle, apresSucces))
+    }
 
     private fun lancerFileBle() = scope.launch {
-        for ((adresse, octets) in fileBle) {
-            val ok = withTimeoutOrNull(20_000) {
+        for (envoi in fileBle) {
+            val adresse = envoi.adresse
+            val echecRecent = echecs[adresse]?.let { System.currentTimeMillis() - it < 15_000 } == true
+            if (echecRecent) { enFile.remove(envoi.cle); continue }
+            val ok = withTimeoutOrNull(12_000) {
                 suspendCancellableCoroutine<Boolean> { cont ->
                     val client = BleGattClient(this@MeshService, adresse)
                     client.onSendComplete = { succes ->
                         client.disconnect()
                         if (cont.isActive) cont.resumeWith(Result.success(succes))
                     }
-                    client.send(octets)
+                    // Délai dépassé : sans ça la connexion restait ouverte et
+                    // bloquait les envois suivants vers le même téléphone
+                    cont.invokeOnCancellation { runCatching { client.disconnect() } }
+                    client.send(envoi.octets)
                 }
             } ?: false
-            if (!ok) EtatMesh.noter("Envoi Bluetooth vers $adresse échoué")
+            enFile.remove(envoi.cle)
+            if (ok) {
+                echecs.remove(adresse)
+                envoi.apresSucces?.invoke()
+            } else {
+                echecs[adresse] = System.currentTimeMillis()
+                EtatMesh.noter("Envoi Bluetooth vers $adresse échoué : nouvel essai plus tard")
+            }
         }
     }
 
@@ -188,7 +240,7 @@ class MeshService : Service() {
         if (!pret.isCompleted) return
         val maintenant = System.currentTimeMillis()
         repo.envois.purger(maintenant - RelayPacket.TTL_48H)
-        val actifs = nodeTracker.getActiveNodes()
+        val actifs = nodeTracker.getActiveNodes(withinMs = 30_000)
         if (actifs.isEmpty()) return
         repo.envois.tous().forEach { e ->
             if (!force && maintenant - e.dernierEssai < 30_000) return@forEach
@@ -196,7 +248,7 @@ class MeshService : Service() {
             val cibles = if (direct != null) listOf(direct.macAddress)
                          else nodeTracker.getBestRelays(localShortId, 3).map { it.macAddress }
             if (cibles.isEmpty()) return@forEach
-            cibles.forEach { fileBle.trySend(it to e.paquet) }
+            cibles.forEach { mettreEnFile(it, e.paquet, e.id) }
             repo.envois.noterEssai(e.id, maintenant)
         }
     }
@@ -288,29 +340,45 @@ class MeshService : Service() {
     private fun setupScanner() {
         scanner.onPeerDiscovered = { address, shortId, rssi ->
             if (shortId != localShortId) {
-                val isNew = !nodeTracker.getActiveNodes()
+                // Revenu après 30 s d'absence (Bluetooth coupé, parti puis revenu) :
+                // traité comme une nouvelle rencontre, clés et messages repartent
+                val isNew = !nodeTracker.getActiveNodes(withinMs = 30_000)
                     .any { it.shortId == shortId }
                 nodeTracker.seen(shortId, address, rssi)
                 peers[shortId] = address
 
                 if (isNew) {
                     EtatMesh.noter("Appareil Relay découvert : $shortId (signal $rssi dBm)")
-                    router.onNewPeerAvailable(shortId, address)
-                    scope.launch { sendOurPreKeys(address) }
-                    scope.launch { delay(1_500); relancerEnvois(force = true) }
-                    updateNotification(
-                        "Mesh actif — ${nodeTracker.activeCount()} pairs"
-                    )
-                    broadcastPeerCount()
+                    rencontre(shortId, address)
                 }
             }
         }
     }
 
+    /** Un pair arrive à portée : nos clés, ce qu'on garde pour lui, nos messages en attente. */
+    private fun rencontre(shortId: String, address: String) {
+        router.onNewPeerAvailable(shortId, address)
+        scope.launch { sendOurPreKeys(address) }
+        scope.launch { delay(1_500); relancerEnvois(force = true) }
+        updateNotification("Mesh actif — ${nodeTracker.activeCount()} pairs")
+        broadcastPeerCount()
+    }
+
     private fun setupGattServer() {
-        gattServer.onPacketReceived = { bytes ->
+        gattServer.onPacketReceived = { bytes, adresse ->
             scope.launch {
                 val packet = deserializePacket(bytes) ?: return@launch
+                // Paquet à son nombre de sauts maximal : il vient directement de
+                // son expéditeur. Avant, un téléphone revenu (Bluetooth coupé, donc
+                // nouvelle adresse) n'était reconnu qu'au scan : ses messages en
+                // attente restaient bloqués jusqu'à ce qu'il nous écrive ET qu'un
+                // autre événement relance les envois.
+                if (packet.ttl == RelayPacket.MAX_HOPS && packet.senderId != localShortId &&
+                    nodeTracker.vuParConnexion(packet.senderId, adresse)) {
+                    EtatMesh.noter("${packet.senderId} est de retour (reconnu par sa connexion)")
+                    peers[packet.senderId] = adresse
+                    rencontre(packet.senderId, adresse)
+                }
                 router.handle(packet)
             }
         }
@@ -325,48 +393,85 @@ class MeshService : Service() {
     private fun sendMessage(recipientId: String, plaintext: String) {
         scope.launch {
             pret.await()
-            try {
-                val store = signalStore
-                val recipientAddress = SignalProtocolAddress(recipientId, 1)
-                val cipher = SessionCipher(store, recipientAddress)
-
-                // Chiffre avec Double Ratchet
-                val encrypted = RelayMessage.encrypt(cipher, plaintext)
-
-                val packet = RelayPacket(
-                    id = UUID.randomUUID().toString(),
-                    type = PacketType.MESSAGE,
-                    senderId = localShortId,
-                    recipientId = recipientId,
-                    payload = serializeEncrypted(encrypted),
-                    signature = signPayload(serializeEncrypted(encrypted)),
-                    ttl = RelayPacket.MAX_HOPS
+            val id = UUID.randomUUID().toString()
+            // Enregistré d'abord : avant, un message sans session était perdu sans trace
+            repo.saveMessage(
+                MessageEntity(
+                    id = id,
+                    contactShortId = recipientId,
+                    direction = "OUT",
+                    plaintext = plaintext,
+                    trustLevelAtSend = getTrustLevel(recipientId),
+                    timestamp = System.currentTimeMillis()
                 )
-
-                // Persiste en base
-                repo.saveMessage(
-                    MessageEntity(
-                        id = packet.id,
-                        contactShortId = recipientId,
-                        direction = "OUT",
-                        plaintext = plaintext,
-                        trustLevelAtSend = getTrustLevel(recipientId),
-                        timestamp = System.currentTimeMillis()
-                    )
-                )
-
-                // Gardé jusqu'à l'accusé de réception, puis tenté tout de suite
-                val octets = serializePacket(packet) ?: return@launch
-                repo.envois.enregistrer(
-                    EnvoiEntity(id = packet.id, destinataire = recipientId, paquet = octets, creeA = System.currentTimeMillis())
-                )
-                EtatMesh.noter("Message ${packet.id.take(8)} pour $recipientId en file d'envoi")
-                relancerEnvois(force = true)
-
-            } catch (e: Exception) {
-                Log.e(TAG, "Erreur envoi : ${e.message}")
-            }
+            )
+            chiffrerEtEnvoyer(recipientId, id, plaintext)
         }
+    }
+
+    /**
+     * Chiffre un message déjà enregistré et le met en file d'envoi. Sans
+     * session, il attend les clés du destinataire : [envoyerEnAttente] le
+     * reprendra dès qu'elles arrivent.
+     */
+    private suspend fun chiffrerEtEnvoyer(destinataire: String, id: String, texte: String): Boolean {
+        val adresse = SignalProtocolAddress(destinataire, RelaySession.DEVICE_ID)
+        if (!signalStore.containsSession(adresse)) {
+            EtatMesh.noter("Message ${id.take(8)} en attente : clés de $destinataire pas encore reçues")
+            envoyerNosCles(destinataire)
+            return false
+        }
+        return try {
+            val chiffre = serializeEncrypted(RelayMessage.encrypt(SessionCipher(signalStore, adresse), texte))
+            val packet = RelayPacket(
+                id = id,
+                type = PacketType.MESSAGE,
+                senderId = localShortId,
+                recipientId = destinataire,
+                payload = chiffre,
+                signature = signPayload(chiffre),
+                ttl = RelayPacket.MAX_HOPS
+            )
+            val octets = serializePacket(packet) ?: return false
+            repo.envois.enregistrer(
+                EnvoiEntity(id = id, destinataire = destinataire, paquet = octets, creeA = System.currentTimeMillis())
+            )
+            EtatMesh.noter("Message ${id.take(8)} pour $destinataire en file d'envoi")
+            relancerEnvois(force = true)
+            true
+        } catch (e: Exception) {
+            EtatMesh.noter("Chiffrement impossible pour $destinataire : ${e.javaClass.simpleName} ${e.message.orEmpty()}")
+            false
+        }
+    }
+
+    /** Messages restés sans paquet (pas de session à l'envoi) : chiffrés maintenant. */
+    private suspend fun envoyerEnAttente(contact: String) {
+        val enFile = repo.envois.pour(contact).map { it.id }.toSet()
+        repo.nonRemis(contact)
+            .filter { it.id !in enFile }
+            .forEach { chiffrerEtEnvoyer(contact, it.id, it.plaintext) }
+    }
+
+    /**
+     * Session cassée (l'autre ne déchiffre plus nos messages, aucun accusé ne
+     * revient) : on repart de ses clés fraîches et on rechiffre ce qui attend.
+     * Les identifiants restent les mêmes : un message déjà reçu n'est pas doublé.
+     */
+    private val derniereResync = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    private suspend fun resynchroniser(contact: String, bundle: org.signal.libsignal.protocol.state.PreKeyBundle) {
+        val maintenant = System.currentTimeMillis()
+        if (maintenant - (derniereResync[contact] ?: 0L) < 120_000) return
+        val bloques = repo.envois.pour(contact).filter { it.tentatives >= 3 && maintenant - it.creeA > 60_000 }
+        if (bloques.isEmpty()) return
+        derniereResync[contact] = maintenant
+        EtatMesh.noter("Session avec $contact renouvelée : ${bloques.size} message(s) sans accusé")
+        val adresse = SignalProtocolAddress(contact, RelaySession.DEVICE_ID)
+        signalStore.deleteSession(adresse)
+        SessionBuilder(signalStore, adresse).process(bundle)
+        bloques.forEach { repo.envois.supprimer(it.id) }
+        envoyerEnAttente(contact)
     }
 
     // ─── Réception d'un message ──────────────────────────────
@@ -390,7 +495,9 @@ class MeshService : Service() {
                     direction = "IN",
                     plaintext = plaintext,
                     trustLevelAtSend = getTrustLevel(packet.senderId),
-                    timestamp = System.currentTimeMillis(),
+                    // Heure d'écriture chez l'expéditeur : des messages arrivés dans le
+                    // désordre (relais, renvois) s'affichent dans l'ordre où ils ont été écrits
+                    timestamp = minOf(packet.createdAt, System.currentTimeMillis()),
                     delivered = true
                 )
             )
@@ -406,9 +513,17 @@ class MeshService : Service() {
             })
 
             envoyerAck(packet)
+            // Premier message reçu de ce contact : la session existe, ce qui attendait peut partir
+            if (encrypted.isPreKeyMessage) envoyerEnAttente(packet.senderId)
 
+        } catch (e: org.signal.libsignal.protocol.DuplicateMessageException) {
+            // Déjà déchiffré (par exemple avant un redémarrage) : l'expéditeur attend encore l'accusé
+            EtatMesh.noter("Message ${packet.id.take(8)} déjà reçu : accusé renvoyé")
+            envoyerAck(packet)
         } catch (e: Exception) {
-            Log.e(TAG, "Erreur déchiffrement : ${e.message}")
+            EtatMesh.noter("Message de ${packet.senderId} indéchiffrable : ${e.javaClass.simpleName} ${e.message.orEmpty()}")
+            // L'expéditeur reçoit nos clés : s'il n'a pas d'accusé, il rouvrira la session
+            envoyerNosCles(packet.senderId)
         }
     }
 
@@ -464,7 +579,7 @@ class MeshService : Service() {
             signature = signPayload(message.id.toByteArray()),
             ttl = RelayPacket.MAX_HOPS
         )
-        val direct = nodeTracker.getActiveNodes().firstOrNull { it.shortId == message.senderId }
+        val direct = nodeTracker.getActiveNodes(withinMs = 30_000).firstOrNull { it.shortId == message.senderId }
         val cibles = if (direct != null) listOf(direct.macAddress)
                      else nodeTracker.getBestRelays(localShortId, SprayAndWait.SPRAY_COPIES).map { it.macAddress }
         cibles.forEach { sendPacketTo(it, ack) }
@@ -477,6 +592,24 @@ class MeshService : Service() {
         sendPacketTo(peerAddress, packet)
     }
 
+    /** Nos clés vers un contact : directement s'il est à portée, sinon par les relais. */
+    private suspend fun envoyerNosCles(contact: String) {
+        val direct = nodeTracker.getActiveNodes(withinMs = 30_000).firstOrNull { it.shortId == contact }
+        val cibles = if (direct != null) listOf(direct.macAddress)
+                     else nodeTracker.getBestRelays(localShortId, 3).map { it.macAddress }
+        if (cibles.isEmpty()) return
+        val packet = gossip.createGossipPacket(localShortId, session.createPreKeyBundle(avecCleUnique = false))
+        cibles.forEach { sendPacketTo(it, packet) }
+    }
+
+    /** Nos clés à chaque voisin direct, régulièrement. */
+    private suspend fun diffuserNosCles() {
+        val voisins = nodeTracker.getActiveNodes(withinMs = 30_000)
+        if (voisins.isEmpty()) return
+        val packet = gossip.createGossipPacket(localShortId, session.createPreKeyBundle(avecCleUnique = false))
+        voisins.forEach { sendPacketTo(it.macAddress, packet) }
+    }
+
     /**
      * Clés reçues d'un pair. On vérifie la signature et que la clé correspond
      * à l'identifiant annoncé, puis on ouvre une session : nos messages vers
@@ -485,7 +618,7 @@ class MeshService : Service() {
     private suspend fun handlePreKeyGossip(packet: RelayPacket) {
         val bundle = gossip.verifyAndExtract(packet)
         if (bundle == null) {
-            Log.w(TAG, "Clés rejetées de ${packet.senderId} : signature ou identifiant invalide")
+            EtatMesh.noter("Clés rejetées de ${packet.senderId} : signature ou identifiant invalide")
             return
         }
         val senderId = packet.senderId
@@ -501,7 +634,7 @@ class MeshService : Service() {
             )
         } else if (existant.publicKey != bundle.identityKey) {
             // Même identifiant, autre clé : usurpation possible, on n'y touche pas
-            Log.w(TAG, "Clé différente pour $senderId : ignorée")
+            EtatMesh.noter("Clé différente reçue pour $senderId : ignorée (usurpation possible)")
             return
         } else {
             repo.upgradeTrust(senderId, TrustLevel.YELLOW)
@@ -511,10 +644,15 @@ class MeshService : Service() {
         try {
             val adresse = SignalProtocolAddress(senderId, RelaySession.DEVICE_ID)
             if (session.accepterBundle(adresse, bundle)) {
-                Log.d(TAG, "Session ouverte avec $senderId")
+                EtatMesh.noter("Session ouverte avec $senderId")
+                // Qu'il puisse aussi nous écrire, même si notre envoi de clés s'est perdu
+                envoyerNosCles(senderId)
+                envoyerEnAttente(senderId)
+            } else {
+                resynchroniser(senderId, bundle)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Session impossible avec $senderId : ${e.message}")
+            EtatMesh.noter("Session impossible avec $senderId : ${e.javaClass.simpleName} ${e.message.orEmpty()}")
         }
     }
 
@@ -522,7 +660,11 @@ class MeshService : Service() {
 
     private fun sendPacketTo(address: String, packet: RelayPacket) {
         val bytes = serializePacket(packet) ?: return
-        fileBle.trySend(address to bytes)
+        val destinataire = packet.recipientId
+        mettreEnFile(address, bytes, packet.id) {
+            // Écrit chez son destinataire lui-même : la copie gardée ne sert plus
+            if (destinataire != null && nodeTracker.getMacAddress(destinataire) == address) router.livre(packet.id)
+        }
     }
 
     // ─── Helpers ─────────────────────────────────────────────

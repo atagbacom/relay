@@ -51,6 +51,8 @@ class RouteurTest {
 
         r.onNewPeerAvailable("05dddddd", "AA:BB:CC:DD:EE:FF")
         assertEquals(listOf("m-2" to listOf("AA:BB:CC:DD:EE:FF")), envoyes)
+        assertEquals("gardé tant que la livraison n'est pas confirmée", 1, r.nombreEnAttente())
+        r.livre("m-2")
         assertEquals(0, r.nombreEnAttente())
     }
 
@@ -74,5 +76,60 @@ class RouteurTest {
         t.seen("05dddddd", "22:22:22:22:22:22", -58)
         assertEquals("22:22:22:22:22:22", t.getMacAddress("05dddddd"))
         assertEquals(1, t.activeCount())
+    }
+
+    @Test
+    fun `un accusé vu passer fait jeter la copie gardée par le relais`() {
+        val r = MeshRouter("05cccccc", NodeTracker())
+        val retires = mutableListOf<String>()
+        r.onRetrait = { retires += it }
+        r.handle(paquet("m-4", de = "05aaaaaa", pour = "05dddddd"))
+        r.handle(paquet("ack-4", PacketType.ACK, de = "05dddddd", pour = "05aaaaaa", payload = "m-4".toByteArray()))
+        assertEquals(listOf("m-4"), retires)
+    }
+
+    @Test
+    fun `un message déjà accusé n'est plus gardé ni relayé`() {
+        val r = MeshRouter("05cccccc", NodeTracker())
+        val gardes = mutableListOf<String>()
+        r.onGarde = { gardes += it.id }
+        r.handle(paquet("ack-5", PacketType.ACK, de = "05dddddd", pour = "05aaaaaa", payload = "m-5".toByteArray()))
+        r.handle(paquet("m-5", de = "05aaaaaa", pour = "05dddddd"))
+        assertFalse(gardes.contains("m-5"))
+    }
+
+    @Test
+    fun `le relais réessaie tant que le destinataire proche n'a pas confirmé`() {
+        val t = NodeTracker()
+        t.seen("05dddddd", "22:22:22:22:22:22", -60)
+        val r = MeshRouter("05cccccc", t)
+        val envoyes = mutableListOf<String>()
+        r.onPacketToRelay = { p, cibles -> if (p.id == "m-6") envoyes += cibles }
+        r.handle(paquet("m-6", de = "05aaaaaa", pour = "05dddddd"))
+        assertEquals(listOf("22:22:22:22:22:22"), envoyes)
+        r.relancer(System.currentTimeMillis() + 21_000)
+        assertEquals(2, envoyes.size)
+        r.livre("m-6")
+        r.relancer(System.currentTimeMillis() + 60_000)
+        assertEquals(2, envoyes.size)
+    }
+
+    @Test
+    fun `les clés d'un appareil sont remises à celui qui ne l'a jamais croisé`() {
+        val r = MeshRouter("05cccccc", NodeTracker())
+        val envoyes = mutableListOf<Pair<String, List<String>>>()
+        r.onPacketToRelay = { p, cibles -> envoyes += p.id to cibles }
+        r.handle(paquet("cles-d", PacketType.PREKEY_GOSSIP, de = "05dddddd", pour = null))
+        r.onNewPeerAvailable("05eeeeee", "33:33:33:33:33:33")
+        assertEquals(listOf("cles-d" to listOf("33:33:33:33:33:33")), envoyes)
+    }
+
+    @Test
+    fun `un appareil revenu avec une nouvelle adresse est reconnu par sa connexion`() {
+        val t = NodeTracker()
+        assertTrue("inconnu jusque-là : nouvelle rencontre", t.vuParConnexion("05dddddd", "44:44:44:44:44:44"))
+        assertEquals("44:44:44:44:44:44", t.adresseRecente("05dddddd"))
+        assertFalse("déjà à portée : rien à relancer", t.vuParConnexion("05dddddd", "55:55:55:55:55:55"))
+        assertEquals("44:44:44:44:44:44", t.getMacAddress("05dddddd"))
     }
 }
