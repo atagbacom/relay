@@ -107,7 +107,7 @@ fun ConversationScreen(
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                             Icon(confiance.icone, contentDescription = null, tint = confiance.couleurs.texte, modifier = Modifier.size(13.dp))
                             Text(
-                                confiance.libelle + if (aPortee) " · à portée" else "",
+                                confiance.libelle + if (aPortee) " · à portée directe" else " · hors de portée",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = confiance.couleurs.texte
                             )
@@ -134,6 +134,19 @@ fun ConversationScreen(
                     if (m.direction == "OUT") BulleEnvoyee(m, nom) else BulleRecue(m)
                 }
             }
+        }
+
+        // ── Hors de portée : dire ce qui va se passer ──────────
+        if (!aPortee) {
+            Text(
+                "Hors de portée Bluetooth (une dizaine de mètres). Vos messages partiront dès qu'un téléphone Relay pourra les porter, jusqu'à 48 h.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            )
         }
 
         // ── Saisie ─────────────────────────────────────────────

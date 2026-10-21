@@ -64,9 +64,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         EtatMesh.choixBatterie.value = choix
     }
 
-    val contacts: StateFlow<List<UiContact>> = repo.observeContacts()
-        .map { list -> list.map { it.toUiContact() } }
-        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+    /**
+     * Contacts avec l'aperçu de leur dernier message et leur joignabilité,
+     * les conversations les plus récentes en premier (avant : aperçu vide).
+     */
+    val contacts: StateFlow<List<UiContact>> = combine(
+        repo.observeContacts(), repo.observeDerniers(), EtatMesh.pairs
+    ) { liste, derniers, pairs ->
+        val parContact = derniers.associateBy { it.contactShortId }
+        val aPortee = pairs.map { it.shortId }.toSet()
+        liste
+            .map { c -> c.toUiContact(parContact[c.shortId], c.shortId in aPortee) }
+            .sortedByDescending { parContact[it.shortId]?.timestamp ?: 0L }
+    }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     private val _messages = MutableStateFlow<List<UiMessage>>(emptyList())
 
@@ -220,12 +230,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // Conversions UI
-    private fun RelayContact.toUiContact() = UiContact(
+    private fun RelayContact.toUiContact(dernier: MessageEntity?, aPortee: Boolean) = UiContact(
         shortId = shortId,
         displayName = displayName,
         trustLevel = trustLevel.name,
-        lastMessage = null,
-        isOnline = false
+        lastMessage = dernier?.let {
+            when {
+                it.direction == "IN" -> it.plaintext
+                it.delivered -> "Vous : ${it.plaintext}"
+                else -> "En attente · ${it.plaintext}"
+            }
+        },
+        isOnline = aPortee
     )
 
     private fun MessageEntity.toUiMessage() = UiMessage(

@@ -168,6 +168,14 @@ interface MessageDao {
     @Query("SELECT * FROM messages ORDER BY timestamp DESC LIMIT 1")
     fun observeLatest(): Flow<MessageEntity?>
 
+    /** Le dernier message de chaque conversation, pour l'aperçu dans la liste. */
+    @Query("""
+        SELECT m.* FROM messages m
+        JOIN (SELECT contactShortId, MAX(timestamp) AS t FROM messages GROUP BY contactShortId) d
+          ON m.contactShortId = d.contactShortId AND m.timestamp = d.t
+    """)
+    fun observeDerniers(): Flow<List<MessageEntity>>
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun save(message: MessageEntity)
 
