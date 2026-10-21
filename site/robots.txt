@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://relay.atagba.com/sitemap.xml

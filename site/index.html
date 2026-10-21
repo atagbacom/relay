@@ -1,0 +1,556 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Relay, messagerie sans internet par Bluetooth | Àtagbà</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Relay est une messagerie Android qui fonctionne sans internet ni carte SIM : vos messages passent de téléphone en téléphone par Bluetooth, chiffrés avec le protocole Signal. Conçue à Cotonou.">
+<link rel="canonical" href="https://relay.atagba.com/">
+<meta name="robots" content="index, follow">
+<meta name="theme-color" content="#0B1A30">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Relay par Àtagbà">
+<meta property="og:locale" content="fr_FR">
+<meta property="og:url" content="https://relay.atagba.com/">
+<meta property="og:title" content="Relay : écrire quand le réseau ne passe plus">
+<meta property="og:description" content="Messagerie Android sans internet ni carte SIM. Les messages passent de téléphone en téléphone par Bluetooth, chiffrés de bout en bout.">
+<meta property="og:image" content="https://relay.atagba.com/og-relay.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Relay, messagerie hors réseau : un message passe de téléphone en téléphone">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Relay : écrire quand le réseau ne passe plus">
+<meta name="twitter:description" content="Messagerie Android sans internet ni carte SIM, chiffrée de bout en bout.">
+<meta name="twitter:image" content="https://relay.atagba.com/og-relay.png">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "SoftwareApplication",
+      "name": "Relay",
+      "url": "https://relay.atagba.com/",
+      "applicationCategory": "CommunicationApplication",
+      "operatingSystem": "Android 8.0 ou plus récent",
+      "description": "Messagerie Android qui fonctionne sans internet ni carte SIM : les messages passent de téléphone en téléphone par Bluetooth, chiffrés avec le protocole Signal.",
+      "inLanguage": "fr",
+      "isAccessibleForFree": true,
+      "license": "https://www.gnu.org/licenses/agpl-3.0.html",
+      "codeRepository": "https://github.com/atagbacom/relay",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "XOF" },
+      "publisher": { "@id": "https://atagba.com/#organisation" }
+    },
+    {
+      "@type": "Organization",
+      "@id": "https://atagba.com/#organisation",
+      "name": "Àtagbà",
+      "url": "https://atagba.com/",
+      "address": { "@type": "PostalAddress", "addressLocality": "Cotonou", "addressCountry": "BJ" }
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        { "@type": "Question", "name": "Relay fonctionne-t-il vraiment sans internet ?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Oui. Relay n'utilise ni internet, ni carte SIM, ni serveur. Les téléphones se transmettent les messages par Bluetooth, de proche en proche." } },
+        { "@type": "Question", "name": "Quelle est la portée de Relay ?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Une dizaine de mètres entre deux téléphones, moins à travers les murs. Au-delà, le message passe par d'autres téléphones équipés de Relay, ou attend jusqu'à 48 heures qu'un téléphone le porte plus loin." } },
+        { "@type": "Question", "name": "Les téléphones qui relaient mes messages peuvent-ils les lire ?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Non. Chaque message est chiffré sur votre téléphone avec le protocole Signal, pour la seule clé de votre correspondant. Les relais transportent un contenu illisible." } },
+        { "@type": "Question", "name": "Relay est-il gratuit ?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Oui. Relay est gratuit et son code source est ouvert, sous licence compatible AGPLv3." } },
+        { "@type": "Question", "name": "Sur quels téléphones Relay fonctionne-t-il ?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Sur les téléphones Android 8.0 ou plus récents équipés du Bluetooth Low Energy. Relay est aujourd'hui une version d'essai." } }
+      ]
+    }
+  ]
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* Mise en page : nuit continue, le radar porte l'ouverture ; ensuite une grille titre à gauche / contenu à droite, séparée par des filets. L'or ne marque que ce qui bouge ou ce qui compte. */
+:root {
+  --nuit: #0B1A30;
+  --nuit-2: #13294B;
+  --nuit-3: #1C3760;
+  --texte: #E9EEF5;
+  --doux: #A9B6C9;
+  --or: #F2A32F;
+  --remis: #9EDCA3;
+  --orange: #E07A2E;
+  --jaune: #E8C547;
+  --filet: rgba(233, 238, 245, .12);
+  --sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--nuit);
+  color: var(--texte);
+  font: 400 17px/1.6 var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--or); text-underline-offset: 3px; }
+a:focus-visible { outline: 2px solid var(--or); outline-offset: 3px; }
+.enveloppe {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+h1, h2, h3 { text-wrap: balance; margin: 0; }
+p { margin: 0; }
+
+/* En-tête */
+header { border-bottom: 1px solid var(--filet); }
+header .enveloppe { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 16px; }
+.marque { display: flex; align-items: center; gap: 10px; color: var(--texte); text-decoration: none; }
+.marque svg { width: 26px; height: 26px; }
+.marque b { font-weight: 700; font-size: 18px; }
+.marque span { font-size: 13px; color: var(--doux); border-left: 1px solid var(--filet); padding-left: 10px; }
+header nav { display: flex; gap: 24px; font-size: 15px; }
+header nav a { color: var(--doux); text-decoration: none; }
+header nav a:hover { color: var(--texte); }
+
+/* Ouverture */
+.ouverture .enveloppe {
+  display: grid; grid-template-columns: 1.05fr 1fr; gap: 48px; align-items: center;
+  padding-block: 72px 48px;
+}
+.surtitre { font-size: 15px; color: var(--doux); }
+.surtitre b { color: var(--or); font-weight: 500; }
+.ouverture h1 {
+  font-size: clamp(38px, 5.4vw, 62px); line-height: 1.04; font-weight: 700;
+  letter-spacing: -.025em; margin-top: 16px;
+}
+.ouverture .chapeau { margin-top: 22px; font-size: 19px; color: var(--doux); max-width: 33em; }
+.actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 32px; }
+.bouton {
+  display: inline-flex; align-items: center; gap: 10px; min-height: 48px;
+  padding: 0 22px; border-radius: 6px; font: 600 16px/1 var(--sans); text-decoration: none;
+  transition: background .2s ease, border-color .2s ease;
+}
+.bouton.plein { background: var(--or); color: var(--nuit); }
+.bouton.plein:hover { background: #F6B451; }
+.bouton.trait { border: 1px solid var(--filet); color: var(--texte); }
+.bouton.trait:hover { border-color: var(--doux); }
+.note-essai { margin-top: 14px; font-size: 14px; color: var(--doux); }
+
+.radar-cadre { position: relative; aspect-ratio: 1; max-width: 100%; width: 100%; }
+#radar { width: 100%; height: 100%; display: block; }
+.radar-legende {
+  position: absolute; left: 0; right: 0; bottom: -4px; text-align: center;
+  font: 400 13px/1.4 var(--mono); color: var(--doux); min-height: 2.8em;
+}
+
+/* Bande technique */
+.specs { border-top: 1px solid var(--filet); border-bottom: 1px solid var(--filet); }
+.specs dl { margin: 0; display: grid; grid-template-columns: repeat(5, 1fr); }
+.specs div { padding: 18px 16px 18px 0; min-width: 0; }
+.specs div + div { padding-left: 16px; border-left: 1px solid var(--filet); }
+.specs dt { font-size: 13px; color: var(--doux); }
+.specs dd { margin: 4px 0 0; font: 500 15px/1.35 var(--mono); }
+
+/* Sections */
+section.bloc { border-bottom: 1px solid var(--filet); }
+section.bloc > .enveloppe { display: grid; grid-template-columns: 260px 1fr; gap: 48px; padding-block: 80px; }
+.titre-bloc h2 { font-size: clamp(26px, 3vw, 34px); line-height: 1.15; font-weight: 700; letter-spacing: -.015em; }
+.titre-bloc p { margin-top: 12px; color: var(--doux); font-size: 16px; }
+.corps { min-width: 0; display: grid; gap: 32px; }
+
+.etapes { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 32px; }
+.etapes li { padding: 20px 0; border-top: 1px solid var(--filet); min-width: 0; display: grid; grid-template-columns: 32px 1fr; gap: 12px; }
+.etapes .num { font: 500 15px/1.6 var(--mono); color: var(--or); }
+.etapes h3 { font-size: 18px; font-weight: 600; line-height: 1.4; }
+.etapes p { color: var(--doux); font-size: 15.5px; margin-top: 4px; }
+.etapes .chiffre { font-family: var(--mono); color: var(--texte); font-size: 14.5px; }
+
+.paliers { display: grid; grid-template-columns: repeat(3, 1fr); }
+.jauge { grid-column: 1 / -1; height: 4px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; margin-bottom: 22px; }
+.jauge i:nth-child(1) { background: var(--orange); }
+.jauge i:nth-child(2) { background: var(--jaune); }
+.jauge i:nth-child(3) { background: var(--remis); }
+.palier { padding-right: 24px; min-width: 0; }
+.palier + .palier { padding-left: 24px; border-left: 1px solid var(--filet); }
+.palier .nom { font: 500 14px/1 var(--mono); }
+.palier h3 { font-size: 18px; font-weight: 600; margin: 12px 0 8px; line-height: 1.35; }
+.palier p { color: var(--doux); font-size: 15.5px; }
+
+.verif { display: grid; grid-template-columns: 1.15fr 1fr; gap: 40px; align-items: center; }
+.verif ol { margin: 0; padding-left: 1.2em; display: grid; gap: 14px; color: var(--doux); }
+.verif ol strong { color: var(--texte); font-weight: 600; }
+.mots { background: var(--nuit-2); border: 1px solid var(--filet); border-radius: 10px; padding: 24px; display: grid; gap: 16px; }
+.mots .t { font-size: 14px; color: var(--doux); }
+.mots .liste { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.mots .liste span { font: 500 20px/1 var(--mono); padding: 14px; border-radius: 6px; background: var(--nuit-3); }
+.mots small { font-size: 13px; color: var(--doux); }
+
+.usages { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 32px; margin: 0; }
+.usages div { padding: 18px 0; border-top: 1px solid var(--filet); min-width: 0; }
+.usages dt { font-weight: 600; font-size: 17px; }
+.usages dd { margin: 4px 0 0; color: var(--doux); font-size: 15.5px; }
+.alertes-bloc { display: grid; gap: 12px; }
+.alertes-bloc h3 { font-size: 18px; font-weight: 600; }
+.alertes-bloc p { color: var(--doux); max-width: 38em; }
+.alertes { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.alertes li { display: inline-flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 6px; border: 1px solid var(--filet); background: var(--nuit-2); font-size: 15px; }
+.alertes li i { width: 8px; height: 8px; background: var(--or); }
+.alertes li.perso { border-style: dashed; background: transparent; color: var(--doux); }
+
+.faq { margin: 0; display: grid; }
+.faq div { padding: 18px 0; border-top: 1px solid var(--filet); }
+.faq div:last-child { border-bottom: 1px solid var(--filet); }
+.faq dt { font-weight: 600; font-size: 17px; }
+.faq dd { margin: 6px 0 0; color: var(--doux); max-width: 42em; }
+
+.etat { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
+.etat h3 { font-size: 16px; font-weight: 600; padding-bottom: 10px; border-bottom: 2px solid currentColor; margin-bottom: 14px; }
+.etat .fait h3 { color: var(--remis); }
+.etat .afaire h3 { color: var(--jaune); }
+.etat ul { margin: 0; padding-left: 1.1em; display: grid; gap: 8px; color: var(--doux); font-size: 15.5px; }
+
+footer .enveloppe { padding-block: 32px 40px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 16px; color: var(--doux); font-size: 14px; }
+footer a { color: var(--doux); }
+
+@media (max-width: 900px) {
+  .ouverture .enveloppe { grid-template-columns: 1fr; padding-block: 40px; gap: 32px; }
+  .radar-cadre { max-width: 440px; margin: 0 auto; }
+  .specs dl { grid-template-columns: repeat(2, 1fr); }
+  .specs div, .specs div + div { padding: 14px 16px 14px 0; border-left: 0; border-top: 1px solid var(--filet); }
+  .specs div:nth-child(-n+2) { border-top: 0; }
+  section.bloc > .enveloppe { grid-template-columns: 1fr; gap: 24px; padding-block: 56px; }
+  .verif, .etat { grid-template-columns: 1fr; }
+}
+@media (max-width: 600px) {
+  header nav, .marque span { display: none; }
+  .etapes, .usages { grid-template-columns: 1fr; }
+  .paliers { grid-template-columns: 1fr; }
+  .palier, .palier + .palier { padding: 14px 0; border-left: 0; border-top: 1px solid var(--filet); }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .bouton { transition: none; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="enveloppe">
+    <a class="marque" href="#haut">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14" fill="none" stroke="#F2A32F" stroke-width="1.5" opacity=".45"/><circle cx="16" cy="16" r="8.5" fill="none" stroke="#F2A32F" stroke-width="1.5" opacity=".75"/><circle cx="16" cy="16" r="3.2" fill="#F2A32F"/></svg>
+      <b>Relay</b><span>par Àtagbà</span>
+    </a>
+    <nav aria-label="Sections">
+      <a href="#voyage">Fonctionnement</a>
+      <a href="#confiance">Confiance</a>
+      <a href="#usages">Usages</a>
+      <a href="#questions">Questions</a>
+      <a href="#etat">État du projet</a>
+    </nav>
+  </div>
+</header>
+
+<main id="haut">
+  <section class="ouverture">
+    <div class="enveloppe">
+      <div>
+        <p class="surtitre"><b>Relay</b> · messagerie hors réseau pour Android</p>
+        <h1>Écrire quand le réseau ne passe plus</h1>
+        <p class="chapeau">Relay fait passer vos messages de téléphone en téléphone par Bluetooth, jusqu'à la personne à qui vous écrivez. Sans internet, sans carte SIM, sans serveur, et chiffrés de bout en bout avec le protocole Signal.</p>
+        <div class="actions">
+          <a class="bouton plein" href="https://github.com/atagbacom/relay/actions/workflows/android.yml">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>
+            Version d'essai
+          </a>
+          <a class="bouton trait" href="https://github.com/atagbacom/relay">Lire le code</a>
+        </div>
+        <p class="note-essai">Android 8 ou plus récent. Preuve de concept, en essai sur le terrain.</p>
+      </div>
+      <div class="radar-cadre">
+        <canvas id="radar" role="img" aria-label="Animation : un message part du téléphone d'Ama, passe par deux autres téléphones et arrive chez Koffi, hors de portée directe"></canvas>
+        <p class="radar-legende" id="legende">Ama écrit à Koffi, hors de portée.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="specs" aria-label="Caractéristiques">
+    <div class="enveloppe">
+      <dl>
+        <div><dt>Transport</dt><dd>Bluetooth LE</dd></div>
+        <div><dt>Chiffrement</dt><dd>Signal, Double Ratchet</dd></div>
+        <div><dt>Copies par message</dt><dd>7 au plus</dd></div>
+        <div><dt>Conservation</dt><dd>48 h</dd></div>
+        <div><dt>Serveur</dt><dd>Aucun</dd></div>
+      </dl>
+    </div>
+  </section>
+
+  <section class="bloc" id="voyage">
+    <div class="enveloppe">
+      <div class="titre-bloc">
+        <h2>Le trajet d'un message</h2>
+        <p>Chaque téléphone qui a Relay devient un relais. Ceux qui portent votre message ne peuvent pas le lire.</p>
+      </div>
+      <div class="corps">
+        <ol class="etapes">
+          <li><span class="num">1</span><div><h3>Écrit et chiffré</h3><p>Le message est chiffré sur votre téléphone, pour la clé de votre contact seulement.</p></div></li>
+          <li><span class="num">2</span><div><h3>Confié aux voisins</h3><p>Les téléphones à portée Bluetooth le reçoivent, en <span class="chiffre">7</span> copies au plus pour ne pas saturer le réseau.</p></div></li>
+          <li><span class="num">3</span><div><h3>Gardé, puis relayé</h3><p>Si le destinataire n'est pas là, le message attend jusqu'à <span class="chiffre">48 h</span> et repart dès qu'un nouveau téléphone passe.</p></div></li>
+          <li><span class="num">4</span><div><h3>Remis</h3><p>À l'arrivée, un accusé de réception revient vers vous et le message passe à « remis ».</p></div></li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <section class="bloc" id="confiance">
+    <div class="enveloppe">
+      <div class="titre-bloc">
+        <h2>Vous savez à qui vous parlez</h2>
+        <p>Chaque contact affiche un niveau de confiance. Il ne peut que monter ; une clé qui change est signalée.</p>
+      </div>
+      <div class="corps">
+        <div class="paliers">
+          <div class="jauge" aria-hidden="true"><i></i><i></i><i></i></div>
+          <div class="palier">
+            <span class="nom" style="color: var(--orange)">Orange</span>
+            <h3>Premier contact</h3>
+            <p>Un appareil vu sur le radar. Les messages sont chiffrés, mais rien ne prouve encore qui tient le téléphone.</p>
+          </div>
+          <div class="palier">
+            <span class="nom" style="color: var(--jaune)">Jaune</span>
+            <h3>Clé confirmée par le réseau</h3>
+            <p>La clé du contact a circulé, signée, par d'autres téléphones, et elle concorde.</p>
+          </div>
+          <div class="palier">
+            <span class="nom" style="color: var(--remis)">Vert</span>
+            <h3>Vérifié en personne</h3>
+            <p>Vous vous êtes vus et avez comparé vos clés. Seul ce niveau exclut une usurpation.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="bloc" id="verification">
+    <div class="enveloppe">
+      <div class="titre-bloc">
+        <h2>Un scan, quatre mots</h2>
+        <p>La vérification en personne prend une dizaine de secondes.</p>
+      </div>
+      <div class="corps">
+        <div class="verif">
+          <ol>
+            <li><strong>L'un scanne le code de l'autre.</strong> Le code change à chaque affichage et ne sert qu'une fois, pendant cinq minutes.</li>
+            <li><strong>Le téléphone scanné est prévenu.</strong> Pas besoin de scanner dans l'autre sens.</li>
+            <li><strong>Vous lisez vos quatre mots à voix haute.</strong> S'ils sont identiques, vous confirmez : le contact passe au vert des deux côtés.</li>
+          </ol>
+          <div class="mots" aria-label="Exemple de mots de sécurité">
+            <span class="t">Mots de sécurité, exemple</span>
+            <div class="liste"><span>lagune</span><span>piment</span><span>tambour</span><span>marché</span></div>
+            <small>Vos mots sont calculés à partir des deux clés.</small>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="bloc" id="usages">
+    <div class="enveloppe">
+      <div class="titre-bloc">
+        <h2>Là où le réseau manque</h2>
+        <p>Quand l'infrastructure est coupée, saturée ou absente.</p>
+      </div>
+      <div class="corps">
+        <dl class="usages">
+          <div><dt>Zones blanches</dt><dd>Villages, pistes et champs sans couverture : les messages voyagent avec ceux qui vont et viennent.</dd></div>
+          <div><dt>Coupures et catastrophes</dt><dd>Inondation, panne d'antenne, coupure d'internet : les voisins restent joignables.</dd></div>
+          <div><dt>Foules</dt><dd>Marchés, festivals et stades, où le réseau sature quand tout le monde appelle en même temps.</dd></div>
+          <div><dt>Équipes de terrain</dt><dd>Secouristes, agents et techniciens qui travaillent loin des antennes.</dd></div>
+        </dl>
+        <div class="alertes-bloc">
+          <h3>Alertes de proximité</h3>
+          <p>Un signal court diffusé à tous les téléphones proches, sans contact préalable. Trois alertes sont prêtes ; chacun peut créer les siennes.</p>
+          <ul class="alertes">
+            <li><i></i>Danger</li>
+            <li><i></i>Besoin médical</li>
+            <li><i></i>Je suis en sécurité</li>
+            <li class="perso">+ Votre alerte</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="bloc" id="questions">
+    <div class="enveloppe">
+      <div class="titre-bloc">
+        <h2>Questions fréquentes</h2>
+      </div>
+      <div class="corps">
+        <dl class="faq">
+          <div><dt>Relay fonctionne-t-il vraiment sans internet ?</dt><dd>Oui. Relay n'utilise ni internet, ni carte SIM, ni serveur. Les téléphones se transmettent les messages par Bluetooth, de proche en proche.</dd></div>
+          <div><dt>Quelle est la portée de Relay ?</dt><dd>Une dizaine de mètres entre deux téléphones, moins à travers les murs. Au-delà, le message passe par d'autres téléphones équipés de Relay, ou attend jusqu'à 48 heures qu'un téléphone le porte plus loin.</dd></div>
+          <div><dt>Les téléphones qui relaient mes messages peuvent-ils les lire ?</dt><dd>Non. Chaque message est chiffré sur votre téléphone avec le protocole Signal, pour la seule clé de votre correspondant. Les relais transportent un contenu illisible.</dd></div>
+          <div><dt>Relay est-il gratuit ?</dt><dd>Oui. Relay est gratuit et son code source est ouvert, sous licence compatible AGPLv3.</dd></div>
+          <div><dt>Sur quels téléphones Relay fonctionne-t-il ?</dt><dd>Sur les téléphones Android 8.0 ou plus récents équipés du Bluetooth Low Energy. Relay est aujourd'hui une version d'essai.</dd></div>
+        </dl>
+      </div>
+    </div>
+  </section>
+
+  <section class="bloc" id="etat">
+    <div class="enveloppe">
+      <div class="titre-bloc">
+        <h2>Où en est Relay</h2>
+        <p>Une preuve de concept au code ouvert : ce qui marche, ce qui reste à prouver.</p>
+      </div>
+      <div class="corps">
+        <div class="etat">
+          <div class="fait">
+            <h3>Essayé sur le terrain</h3>
+            <ul>
+              <li>Messages chiffrés entre deux téléphones Android, sans internet</li>
+              <li>Accusés de réception et renvoi automatique</li>
+              <li>Vérification en personne</li>
+              <li>Alertes de proximité, prêtes ou personnalisées</li>
+            </ul>
+          </div>
+          <div class="afaire">
+            <h3>À prouver</h3>
+            <ul>
+              <li>Relais à plusieurs sauts, avec trois téléphones ou plus</li>
+              <li>Identifiant court allongé contre l'usurpation sans vérification</li>
+              <li>Version signée sur le Play Store</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="enveloppe">
+    <span>Relay est conçu par Àtagbà, à Cotonou.</span>
+    <span><a href="https://github.com/atagbacom/relay">Code source</a> · licence compatible AGPLv3</span>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var toile = document.getElementById('radar');
+  var legende = document.getElementById('legende');
+  var ctx = toile.getContext('2d');
+  var calme = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var OR = '#F2A32F', REMIS = '#9EDCA3', TEXTE = '#E9EEF5';
+
+  var noeuds = [
+    { nom: 'Ama', x: .30, y: .62 },
+    { nom: '', x: .52, y: .40 },
+    { nom: '', x: .70, y: .66 },
+    { nom: 'Koffi', x: .86, y: .30 },
+    { nom: '', x: .18, y: .30 },
+    { nom: '', x: .48, y: .84 }
+  ];
+  var chemin = [0, 1, 2, 3];
+  var etapes = [
+    'Ama écrit à Koffi, hors de portée.',
+    'Un premier téléphone prend le message, sans pouvoir le lire.',
+    'Un second le porte plus loin.',
+    'Koffi reçoit le message.',
+    'L’accusé revient : « remis ».'
+  ];
+  var t0 = performance.now(), cycle = 9000, derniere = -1;
+
+  function taille() {
+    var r = toile.getBoundingClientRect(), d = window.devicePixelRatio || 1;
+    toile.width = Math.max(1, r.width * d); toile.height = Math.max(1, r.height * d);
+    ctx.setTransform(d, 0, 0, d, 0, 0);
+    if (calme) dessiner(0);
+  }
+
+  function dessiner(maintenant) {
+    var w = toile.clientWidth, h = toile.clientHeight, s = Math.min(w, h);
+    var t = calme ? 0.62 : ((maintenant - t0) % cycle) / cycle;
+    ctx.clearRect(0, 0, w, h);
+
+    // Anneaux et ligne de balayage fine
+    var cx = w / 2, cy = h / 2;
+    ctx.lineWidth = 1;
+    for (var i = 1; i <= 4; i++) {
+      ctx.strokeStyle = 'rgba(169,182,201,' + (0.16 - i * 0.025) + ')';
+      ctx.beginPath(); ctx.arc(cx, cy, s * 0.12 * i, 0, Math.PI * 2); ctx.stroke();
+    }
+    if (!calme) {
+      var a = (maintenant / 2600) % (Math.PI * 2);
+      ctx.strokeStyle = 'rgba(242,163,47,.28)';
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(a) * s * .48, cy + Math.sin(a) * s * .48); ctx.stroke();
+    }
+
+    function pos(n) { return { x: n.x * w, y: n.y * h }; }
+    var saut = Math.min(3, Math.max(0, (t - .12) / .2));
+    var etape = t < .12 ? 0 : t < .32 ? 1 : t < .52 ? 2 : t < .76 ? 3 : 4;
+    if (etape !== derniere) { legende.textContent = etapes[etape]; derniere = etape; }
+
+    for (var k = 0; k < 3; k++) {
+      var A = pos(noeuds[chemin[k]]), B = pos(noeuds[chemin[k + 1]]);
+      ctx.setLineDash([3, 5]);
+      ctx.strokeStyle = saut > k ? 'rgba(242,163,47,.6)' : 'rgba(169,182,201,.18)';
+      ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke();
+    }
+    ctx.setLineDash([]);
+
+    if (!calme && t < .2) {
+      var p0 = pos(noeuds[0]), r = (t / .2) * s * .3;
+      ctx.strokeStyle = 'rgba(242,163,47,' + (1 - t / .2) * .45 + ')';
+      ctx.beginPath(); ctx.arc(p0.x, p0.y, r, 0, Math.PI * 2); ctx.stroke();
+    }
+
+    noeuds.forEach(function (n, idx) {
+      var p = pos(n), surChemin = chemin.indexOf(idx);
+      var atteint = surChemin >= 0 && saut >= surChemin;
+      var rayon = idx === 0 || idx === 3 ? 7 : 5;
+      ctx.fillStyle = idx === 3 && t >= .72 ? REMIS : atteint ? OR : 'rgba(169,182,201,.55)';
+      ctx.beginPath(); ctx.arc(p.x, p.y, rayon, 0, Math.PI * 2); ctx.fill();
+      if (n.nom) {
+        ctx.font = '500 13px "IBM Plex Mono", monospace';
+        ctx.fillStyle = TEXTE; ctx.textAlign = 'center';
+        ctx.fillText(n.nom, p.x, p.y - 16);
+      }
+    });
+
+    if (t >= .12 && t < .72) {
+      var seg = Math.min(2, Math.floor(saut)), f = saut - seg;
+      var A2 = pos(noeuds[chemin[seg]]), B2 = pos(noeuds[chemin[seg + 1]]);
+      var x = A2.x + (B2.x - A2.x) * f, y = A2.y + (B2.y - A2.y) * f;
+      ctx.fillStyle = OR; ctx.fillRect(x - 6, y - 4.5, 12, 9);
+      ctx.strokeStyle = '#0B1A30'; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(x - 6, y - 4.5); ctx.lineTo(x, y + .5); ctx.lineTo(x + 6, y - 4.5); ctx.stroke();
+    }
+    if (t >= .76) {
+      var q = Math.min(1, (t - .76) / .2) * 3, sg = Math.min(2, Math.floor(q)), ff = q - sg;
+      var C = pos(noeuds[chemin[3 - sg]]), D = pos(noeuds[chemin[2 - sg]]);
+      ctx.fillStyle = REMIS;
+      ctx.beginPath(); ctx.arc(C.x + (D.x - C.x) * ff, C.y + (D.y - C.y) * ff, 4, 0, Math.PI * 2); ctx.fill();
+    }
+    if (!calme) requestAnimationFrame(dessiner);
+  }
+
+  window.addEventListener('resize', taille);
+  taille();
+  if (!calme) requestAnimationFrame(dessiner);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { if (calme) dessiner(0); });
+})();
+</script>
+</body>
+</html>
