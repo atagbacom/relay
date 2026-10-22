@@ -182,6 +182,10 @@ interface MessageDao {
     @Query("UPDATE messages SET delivered = 1 WHERE id = :id")
     suspend fun markDelivered(id: String)
 
+    /** Contacts qui ont des messages envoyés pas encore accusés. */
+    @Query("SELECT DISTINCT contactShortId FROM messages WHERE direction = 'OUT' AND delivered = 0")
+    suspend fun contactsAvecNonRemis(): List<String>
+
     /** Messages envoyés à ce contact et pas encore accusés, du plus ancien au plus récent. */
     @Query("SELECT * FROM messages WHERE contactShortId = :contactShortId AND direction = 'OUT' AND delivered = 0 ORDER BY timestamp ASC")
     suspend fun nonRemis(contactShortId: String): List<MessageEntity>
@@ -191,7 +195,7 @@ interface MessageDao {
 
 @Database(
     entities = [IdentityEntity::class, ContactEntity::class, MessageEntity::class, SignalRecordEntity::class, EnvoiEntity::class, RelaisEntity::class],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class RelayDatabase : RoomDatabase() {
@@ -203,6 +207,38 @@ abstract class RelayDatabase : RoomDatabase() {
     abstract fun relaisDao(): RelaisDao
 
     companion object {
+        /**
+         * v6 : identifiant de 64 bits tiré d'un hachage de la clé (issue #12).
+         * Chaque identifiant est recalculé depuis la clé déjà stockée : contacts,
+         * messages, sessions Signal et notre propre identité. Les paquets déjà
+         * chiffrés (envois, copies relayées) portent les anciens identifiants :
+         * ils sont jetés, les messages non remis seront rechiffrés.
+         */
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                val renommage = mutableMapOf<String, String>()
+                db.query("SELECT shortId, publicKeyBytes FROM contacts").use { c ->
+                    while (c.moveToNext()) renommage[c.getString(0)] = com.relay.app.crypto.RelayIdentity.idDeCle(c.getBlob(1))
+                }
+                renommage.forEach { (ancien, nouveau) ->
+                    db.execSQL("UPDATE contacts SET shortId = ? WHERE shortId = ?", arrayOf(nouveau, ancien))
+                    db.execSQL("UPDATE messages SET contactShortId = ? WHERE contactShortId = ?", arrayOf(nouveau, ancien))
+                    db.execSQL(
+                        "UPDATE signal_records SET recordKey = ? WHERE kind = 'session' AND recordKey = ?",
+                        arrayOf("$nouveau:1", "$ancien:1")
+                    )
+                }
+                db.query("SELECT serializedKeyPair FROM identity WHERE id = 0").use { c ->
+                    if (c.moveToFirst()) {
+                        val id = com.relay.app.crypto.RelayIdentity.shortId(org.signal.libsignal.protocol.IdentityKeyPair(c.getBlob(0)))
+                        db.execSQL("UPDATE identity SET shortId = ? WHERE id = 0", arrayOf(id))
+                    }
+                }
+                db.execSQL("DELETE FROM envois")
+                db.execSQL("DELETE FROM relais")
+            }
+        }
+
         /** v5 : nom annoncé par le contact, distinct du nom donné à la main. */
         private val MIGRATION_4_5 = object : Migration(4, 5) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -255,7 +291,7 @@ abstract class RelayDatabase : RoomDatabase() {
                     context.applicationContext,
                     RelayDatabase::class.java,
                     "relay.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build().also { INSTANCE = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).build().also { INSTANCE = it }
             }
         }
     }

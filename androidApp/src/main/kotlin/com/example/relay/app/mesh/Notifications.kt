@@ -117,6 +117,26 @@ object Notifications {
         nmc.notify(9003, notif)
     }
 
+    /** Un téléphone proche a une version trop ancienne pour communiquer. */
+    @SuppressLint("MissingPermission")
+    fun ancienneVersion(context: Context) {
+        val nmc = NotificationManagerCompat.from(context)
+        if (!nmc.areNotificationsEnabled()) return
+        val ouvrir = PendingIntent.getActivity(
+            context, 13, Intent(context, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notif = NotificationCompat.Builder(context, CANAL_ETAT)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setColor(0xFF13294B.toInt())
+            .setContentTitle("Un téléphone proche a une ancienne version de Relay")
+            .setContentText("Vous ne pouvez pas communiquer. Partagez-lui la vôtre : Réglages › Partager Relay.")
+            .setContentIntent(ouvrir)
+            .setAutoCancel(true)
+            .build()
+        nmc.notify(9004, notif)
+    }
+
     fun retirerBluetoothEteint(context: Context) {
         NotificationManagerCompat.from(context).cancel(ID_BLUETOOTH)
     }

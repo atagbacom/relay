@@ -78,7 +78,7 @@ fun ReglagesScreen(
                     modifier = Modifier.padding(top = 6.dp)
                 ) { Text("Enregistrer") }
             }
-            Info("Identifiant", identifiant)
+            Info("Identifiant", com.relay.app.crypto.RelayIdentity.lisible(identifiant))
             Info("Empreinte de la clé", empreinte)
         }
 

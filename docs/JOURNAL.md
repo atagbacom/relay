@@ -319,13 +319,23 @@ Chaque entrée suit le même schéma : **constat**, **cause**, **solution**, **l
 
 > **Leçon.** La clé de signature ne se remplace pas : sa garde se décide avant la première version publique, pas après.
 
+### 23. Identifiant de 64 bits (issue #12)
+
+- **Constat.** L'identifiant court reprenait les 4 premiers octets de la clé, dont le premier vaut toujours 05 : 24 bits utiles. Fabriquer une clé au même identifiant qu'une autre personne prenait quelques secondes.
+- **Solution.**
+  - identifiant = 8 premiers octets du SHA-256 de la clé (64 bits), 16 caractères, affiché en groupes de 4 ;
+  - migration de la base (v6) : chaque identifiant recalculé depuis la clé stockée (contacts, messages, sessions Signal, notre identité) ; paquets déjà chiffrés jetés, messages non remis rechiffrés au démarrage ;
+  - un téléphone resté sur l'ancien format est détecté : notification pour lui partager la nouvelle version ;
+  - fait avant la première version publique : après, chaque utilisateur aurait dû refaire ses contacts.
+
+> **Leçon.** Un identifiant affiché n'est pas une preuve d'identité ; il doit au moins coûter cher à imiter, et la vérification en personne reste la vraie garantie.
+
 ---
 
 ## Points ouverts
 
 | N° | Sujet | Pourquoi c'est important |
 |---|---|---|
-| #12 | L'identifiant court n'a que 3 octets utiles | Un attaquant peut fabriquer une clé qui affiche le même identifiant en quelques secondes ; seule la vérification par QR code protège vraiment |
 | — | Test à trois téléphones ou plus | Le relais à plusieurs sauts (bouche à oreille) n'a pas encore été essayé sur le terrain |
 
 ---

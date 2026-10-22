@@ -26,11 +26,20 @@ class CryptoTest {
     }
 
     @Test
-    fun `shortId produit 8 caractères hex`() {
+    fun `identifiant de 64 bits tiré du hachage de la clé`() {
         val identity = RelayIdentity.generate()
         val id = RelayIdentity.shortId(identity)
-        assertEquals(8, id.length)
+        assertEquals(16, id.length)
         assertTrue(id.matches(Regex("[0-9a-f]+")))
+        assertNotEquals(id, RelayIdentity.shortId(RelayIdentity.generate()))
+        assertFalse(RelayIdentity.ancienFormat(id))
+    }
+
+    @Test
+    fun `identifiant stable pour une clé donnée`() {
+        // SHA-256 de 05 suivi de 32 zéros, 8 premiers octets
+        assertEquals("96a01e6b435b11ab", RelayIdentity.idDeCle(byteArrayOf(5) + ByteArray(32)))
+        assertEquals("96a0 1e6b 435b 11ab", RelayIdentity.lisible("96a01e6b435b11ab"))
     }
 
     @Test

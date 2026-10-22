@@ -101,6 +101,8 @@ class RelayRepository(context: Context) {
 
     suspend fun nonRemis(contactShortId: String): List<MessageEntity> = messageDao.nonRemis(contactShortId)
 
+    suspend fun contactsAvecNonRemis(): List<String> = messageDao.contactsAvecNonRemis()
+
     // ─── Sessions crypto ─────────────────────────────────────
 
     /**
