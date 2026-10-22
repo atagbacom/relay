@@ -147,9 +147,13 @@ fun RelayApp(
     viewModel: MainViewModel,
     contactAOuvrir: MutableState<String?> = mutableStateOf(null),
     urgence: MutableState<Boolean> = mutableStateOf(false),
+    /** Écran d'ouverture : l'accueil, sauf pour les captures de démonstration. */
+    ecranInitial: Screen = Screen.Reseau,
 ) {
-    var screen by remember { mutableStateOf<Screen>(Screen.Reseau) }
-    var onglet by remember { mutableStateOf(Onglet.RESEAU) }
+    var screen by remember { mutableStateOf(ecranInitial) }
+    var onglet by remember {
+        mutableStateOf(if (ecranInitial is Screen.Messages || ecranInitial is Screen.Conversation) Onglet.MESSAGES else Onglet.RESEAU)
+    }
     var qrReturnContact by remember { mutableStateOf<String?>(null) }
 
     fun versOnglet(o: Onglet) {
@@ -189,6 +193,19 @@ fun RelayApp(
     VerificationRecueDialogue(viewModel)
     // Une seule fois : ne pas laisser l'économie de batterie couper le relais
     ArrierePlanDialogue()
+
+    // Icônes de la barre d'état claires sur les écrans sombres (avant : heure et
+    // batterie sombres sur bleu nuit, illisibles), sombres sur les écrans clairs
+    val vue = androidx.compose.ui.platform.LocalView.current
+    val fondSombre = screen is Screen.Reseau || screen is Screen.Urgence || screen is Screen.Qr ||
+        screen is Screen.Alerte || androidx.compose.foundation.isSystemInDarkTheme()
+    if (!vue.isInEditMode) {
+        SideEffect {
+            (vue.context as? android.app.Activity)?.window?.let { fenetre ->
+                androidx.core.view.WindowCompat.getInsetsController(fenetre, vue).isAppearanceLightStatusBars = !fondSombre
+            }
+        }
+    }
 
     val avecBarre = screen is Screen.Reseau || screen is Screen.Messages
     val bluetooth by com.relay.app.mesh.EtatMesh.bluetoothActif.collectAsState()

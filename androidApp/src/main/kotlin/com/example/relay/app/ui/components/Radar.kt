@@ -226,8 +226,17 @@ fun RadarReseau(
 /** Position stable de chaque appareil, en coordonnées -1..1 autour du centre. */
 private fun positionner(noeuds: List<NoeudRadar>): Map<String, Offset> {
     val res = mutableMapOf<String, Offset>()
-    noeuds.filter { it.direct }.forEach { n ->
-        res[n.id] = polaire(angleDe(n.id), n.rssi?.let { distanceDepuisSignal(it) } ?: 0.6f)
+    noeuds.filter { it.direct }.sortedBy { it.id }.forEach { n ->
+        val rayon = n.rssi?.let { distanceDepuisSignal(it) } ?: 0.6f
+        // Deux appareils au même endroit se cachaient l'un l'autre : on tourne
+        // par pas de 35° jusqu'à trouver une place libre (toujours la même)
+        var angle = angleDe(n.id)
+        var essais = 0
+        while (essais < 10 && res.values.any { (it - polaire(angle, rayon)).getDistance() < 0.3f }) {
+            angle += 35f * (Math.PI.toFloat() / 180f)
+            essais++
+        }
+        res[n.id] = polaire(angle, rayon)
     }
     noeuds.filter { !it.direct }.forEach { n ->
         // Un appareil relayé se place plus loin, du côté de son relais
