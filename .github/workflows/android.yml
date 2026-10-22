@@ -214,6 +214,7 @@ jobs:
         if: always()
         run: |
           [ -f captures/relay-demo.mp4 ] || exit 0
+          sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends ffmpeg > /dev/null
           ffmpeg -v error -y -i captures/relay-demo.mp4 -vf "fps=1/3,scale=270:-1,tile=8x1" -frames:v 1 captures/relay-demo-planche.png
           ffmpeg -v error -y -i captures/relay-demo.mp4 -vf "scale=540:-2,fps=24" -c:v libvpx-vp9 -b:v 0 -crf 38 -an captures/relay-demo.webm
           ls -la captures/relay-demo*
