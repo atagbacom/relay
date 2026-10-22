@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" role="img" aria-label="Relay">
+  <rect width="108" height="108" rx="24" fill="#0B1A30"/>
+  <path d="M-4,30 C18,22 34,40 56,32 S92,18 112,26" fill="none" stroke="#1F3A63"/>
+  <path d="M-4,82 C20,74 38,92 60,84 S94,72 112,78" fill="none" stroke="#1F3A63"/>
+  <circle cx="54" cy="54" r="27.5" fill="none" stroke="#F2A32F" stroke-width="2.4" stroke-opacity="0.45"/>
+  <circle cx="54" cy="54" r="17.5" fill="none" stroke="#F2A32F" stroke-width="3.2" stroke-opacity="0.78"/>
+  <circle cx="54" cy="54" r="7.5" fill="#F2A32F"/>
+</svg>
