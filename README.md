@@ -1,84 +1,108 @@
 # Relay
 
-Messagerie mesh Bluetooth Low Energy, chiffrée de bout en bout avec le protocole Signal, fonctionnant entièrement hors ligne — sans internet, sans réseau cellulaire, sans serveur.
+Messagerie Android qui fonctionne sans internet, sans carte SIM et sans serveur. Les messages passent de téléphone en téléphone par Bluetooth Low Energy jusqu'à leur destinataire, chiffrés de bout en bout avec le protocole Signal.
 
-## Présentation
+Nom juridique : **Àtagbà Relay**. Projet porté par Àtagbà, Cotonou.
 
-Relay est une application Android qui permet d'échanger des messages texte chiffrés directement entre appareils à portée Bluetooth Low Energy (BLE), en relayant les messages de proche en proche jusqu'à leur destinataire via un algorithme de routage épidémique (*Spray and Wait*). Chaque message est chiffré de bout en bout avec le protocole Signal (Double Ratchet, via `libsignal`), et la confiance envers un contact évolue par paliers explicites — d'un premier contact non vérifié jusqu'à un échange de clé en face à face par QR code.
+- Présentation : [atagbacom.github.io/relay](https://atagbacom.github.io/relay/)
+- Versions publiées : onglet [Releases](https://github.com/atagbacom/relay/releases) (tags `vX.Y.Z`)
+- Journal du projet (étapes, problèmes, solutions) : [docs/JOURNAL.md](docs/JOURNAL.md)
 
-Le projet cible les situations où l'infrastructure réseau est coupée, absente ou non fiable : catastrophe naturelle, zone blanche, manifestation, festival, zone rurale. C'est une **preuve de concept Android** explorant le chiffrement de bout en bout, le routage mesh tolérant aux ruptures de connexion (*delay-tolerant networking*) et la gestion de la confiance cryptographique sans autorité centrale.
+## Usage prévu
+
+Relay est conçu pour **rester joignable quand le réseau manque** : zones sans couverture, coupures, catastrophes naturelles, rassemblements qui saturent le réseau mobile, équipes de terrain. Il ne sert pas à contourner une restriction d'accès imposée par la loi, et ne doit pas être présenté ainsi.
+
+Relay est une **preuve de concept en essai sur le terrain**. Il n'a pas fait l'objet d'un audit de sécurité indépendant : ne le confiez pas à des personnes dont la sécurité dépendrait de lui.
+
+## Fonctionnement
+
+1. **Chiffrement sur l'appareil.** Chaque message est chiffré avec le protocole Signal (Double Ratchet, `libsignal`) pour la seule clé du destinataire.
+2. **Remise aux voisins.** Les téléphones à portée Bluetooth (une dizaine de mètres) reçoivent une copie ; 7 copies au plus circulent (*Spray and Wait*).
+3. **Garde et relais.** Un relais garde la copie, en base, jusqu'à la preuve de livraison, l'accusé de réception ou l'expiration (48 h), et la représente dès que le destinataire passe à portée.
+4. **Accusé de réception.** Il revient vers l'expéditeur et fait jeter les autres copies en chemin. Sans accusé, l'expéditeur renvoie automatiquement.
+
+Les relais transportent un contenu illisible. Ils voient seulement l'identifiant de l'expéditeur, celui du destinataire et l'heure.
+
+## Fonctionnalités
+
+### Messagerie et réseau
+
+- Messages chiffrés de bout en bout, livrés même si aucun chemin n'existe au moment de l'envoi.
+- Découverte des téléphones Relay alentour, affichée sur un radar (distance indicative d'après la force du signal).
+- Indication par contact : « à portée directe » ou « hors de portée », avec ce qui arrive au message.
+- Clés de chiffrement diffusées chaque minute et transmises par les relais : on peut écrire à quelqu'un qu'on n'a jamais croisé directement.
+- Téléphone revenu (Bluetooth coupé puis rallumé, nouvelle adresse) reconnu dès son premier paquet.
+
+### Confiance
+
+- Trois niveaux visibles sur chaque contact, qui ne font que monter : orange (premier contact), jaune (clé confirmée par le réseau), vert (vérifié en personne).
+- Vérification en personne en un seul scan de code QR (code à usage unique, 5 minutes), puis comparaison de quatre mots à voix haute.
+- Nom choisi par chacun, transmis signé ; un nom donné à la main reste prioritaire.
+
+### Urgence
+
+- Mode urgence en un geste : bouton « Urgence » dans la notification de Relay ou à l'appui long sur l'icône, puis maintenir 2 secondes. L'alerte part, chiffrée, à tous les contacts.
+- Trois alertes fournies (Danger, Besoin médical, Je suis en sécurité) et alertes personnalisées.
+- Alertes, accusés et vérifications passent avant les autres envois.
+
+### Fiabilité sur un vrai téléphone
+
+- Relais en arrière-plan, repris au redémarrage du téléphone ; demande d'exemption d'économie de batterie.
+- Bluetooth éteint signalé par une notification et un bandeau, avec un bouton pour l'allumer.
+- Trois modes de batterie (automatique, économie, économie maximale) qui espacent réellement le scan et l'annonce Bluetooth.
+- Écran de diagnostic : état du Bluetooth, appareils vus, journal des envois, erreurs de chiffrement.
+
+### Mises à jour hors Play Store
+
+- « Partager Relay » envoie l'application installée par Xender, Quick Share ou Bluetooth, sans internet.
+- Un téléphone qui croise une version plus récente est prévenu par le maillage.
+- Avec internet, vérification une fois par jour sur GitHub Releases ; téléchargement à la demande, empreinte SHA-256 vérifiée. Android refuse toute version qui ne porte pas la même signature.
 
 ## Stack technique
 
 | Domaine | Technologie |
 | --- | --- |
-| Langage | Kotlin, application Android uniquement |
-| Interface utilisateur | Jetpack Compose (Material 3) |
-| Cible | Android (`minSdk` 26, `compileSdk`/`targetSdk` 36) |
-| Chiffrement de bout en bout | Signal Protocol via `libsignal-android` / `libsignal-client` (Double Ratchet, prekeys) |
-| Transport mesh | Bluetooth Low Energy natif (`android.bluetooth` — GATT client/serveur, advertising, scan) |
-| Stockage local | Room (SQLite) — identité, contacts, messages |
-| Échange de clé | ZXing (génération QR) + CameraX / ML Kit Barcode Scanning (scan QR) |
+| Langage | Kotlin, Android uniquement (`minSdk` 26, `targetSdk` 36) |
+| Interface | Jetpack Compose, Material 3, polices IBM Plex |
+| Chiffrement | Protocole Signal via `libsignal-android` |
+| Transport | Bluetooth Low Energy natif : annonce, scan, GATT client et serveur, fragmentation selon la MTU |
+| Format des paquets | Binaire, borné et versionné (`PacketCodec`), jamais de désérialisation Java |
+| Stockage | Room (SQLite) : identité, contacts, messages, état Signal, envois en attente, copies relayées |
+| Codes QR | ZXing (génération et lecture), CameraX |
 | Concurrence | Coroutines Kotlin |
-| Build | Gradle (Kotlin DSL), Android Gradle Plugin |
 
-## Fonctionnalités
-
-- **Messagerie chiffrée de bout en bout** — chaque message est chiffré avec le protocole Signal (Double Ratchet) avant de transiter sur le réseau mesh.
-- **Réseau mesh BLE sans infrastructure** — les appareils s'annoncent (*advertising*), se découvrent (*scan*) et échangent des paquets en GATT ; les messages sont relayés de nœud en nœud jusqu'au destinataire.
-- **Routage Spray-and-Wait** — distribution bornée de copies d'un message (7 par défaut) avec déduplication par filtre de Bloom, TTL en nombre de sauts et expiration automatique après 48 h, pour éviter l'explosion combinatoire d'un flooding naïf.
-- **Trois niveaux de confiance progressifs et irréversibles** (`ORANGE` → `YELLOW` → `GREEN`) :
-  - `ORANGE` — premier contact, clé non vérifiée (Trust On First Use) ;
-  - `YELLOW` — clé propagée et vérifiée via un gossip de prekeys signé, relayé par le réseau ;
-  - `GREEN` — clé vérifiée par échange direct en QR code, confiance maximale.
-- **Échange de clé par QR code** — génération et scan de QR (caméra) pour valider un contact en face à face et passer directement au niveau de confiance maximal.
-- **Messages différés** — un message destiné à un contact absent du réseau est conservé et livré (avec protection anti-rejeu par nonce) lorsque ce contact réapparaît.
-- **Adaptation à la batterie** — trois modes (`FULL` / `LOW` / `CRITICAL`) qui réduisent la fréquence de scan et limitent le relais aux messages prioritaires quand la batterie est faible, pour rester utile en situation d'urgence prolongée.
-- **Service Android en avant-plan** (`MeshService`) qui maintient le mesh actif (scan, advertising, relais) en arrière-plan.
-- **Interface Compose dédiée** — écran de contacts (avec indicateur de niveau de confiance), écran de conversation, écran d'échange QR.
+Composants tiers et licences : [docs/licences/COMPOSANTS.md](docs/licences/COMPOSANTS.md).
 
 ## Structure du projet
 
 ```text
 relay/
-├── androidApp/                     Application Android — logique métier complète
-│   └── src/main/kotlin/.../app/
-│       ├── mesh/                   BLE (scan, advertising, GATT), routage Spray-and-Wait, suivi des nœuds, batterie
-│       ├── crypto/                 Identité Signal, sessions, gossip de prekeys, sessions différées, QR, niveaux de confiance
-│       ├── model/                  Modèles de données (RelayPacket, RelayContact)
-│       ├── repository/             RelayRepository — source de vérité unique entre UI et service
-│       ├── storage/                Persistance Room (identité, contacts, messages)
-│       └── ui/                     Écrans Compose (contacts, conversation, QR) et thème
-│   └── src/test/kotlin/            Tests unitaires de la couche crypto et confiance
-├── shared/                         Module du gabarit de départ, inutilisé : toute la logique vit dans androidApp
-├── build.gradle.kts                Configuration Gradle racine
-├── settings.gradle.kts             Déclaration des modules (:androidApp, :shared)
-└── gradlew / gradlew.bat           Wrapper Gradle
+├── androidApp/src/main/kotlin/.../app/
+│   ├── mesh/          Bluetooth (annonce, scan, GATT), routeur Spray-and-Wait, suivi des pairs,
+│   │                  service en arrière-plan, notifications, batterie, état partagé
+│   ├── crypto/        Identité, sessions Signal, diffusion des clés, vérification, QR, empreinte
+│   ├── model/         Paquets et contacts, format binaire
+│   ├── repository/    Accès unique aux données pour l'interface et le service
+│   ├── storage/       Base Room et migrations
+│   └── ui/            Écrans Compose et thème
+├── androidApp/src/test/kotlin/   Tests unitaires (crypto, format, fragmentation, routeur, mises à jour)
+├── site/              Landing page, publiée sur GitHub Pages
+├── docs/              Journal du projet et licences
+└── .github/           CI : compilation, tests, démarrage sur émulateur, publication
 ```
 
-## Build et installation
+## Compilation, tests et versions
 
-La compilation et les tests se font **dans la CI GitHub Actions** (`.github/workflows/android.yml`), à chaque pull request et à chaque fusion dans `main`, pas sur un poste de développement.
+Tout se compile **dans la CI GitHub Actions**, jamais sur un poste de développement.
 
-- **APK de débogage** : à télécharger dans l'artefact `relay-debug-apk` de la dernière exécution réussie (onglet *Actions*).
-- **Tests** : `:androidApp:testDebugUnitTest`, rapport dans l'artefact `rapport-tests`.
+- **Chaque pull request** : APK de débogage, tests unitaires, démarrage sur émulateur de l'APK de débogage et de la version réduite par R8. L'APK de test est publié en pré-version avec un lien direct : `releases/download/essai-pr-<numéro>/relay-essai.apk` (lien aussi dans le résumé de l'exécution).
+- **Version publique** : pousser un tag `vX.Y.Z` sur `main`. La CI teste, démarre la version réduite sur émulateur, la signe avec la clé de production (secrets GitHub) et la publie en GitHub Release avec les empreintes SHA-256.
+- **Landing page** : publiée sur GitHub Pages à chaque fusion qui modifie `site/`.
 
-Pour installer l'APK téléchargé sur un téléphone branché : `adb install relay-debug.apk`.
-
-Le mesh BLE nécessite du matériel Bluetooth réel : pour tester les échanges entre pairs, installez l'application sur au moins deux appareils physiques (un émulateur ne dispose pas de radio BLE fonctionnelle). Au premier lancement, l'application demande les permissions Bluetooth, localisation et caméra nécessaires au scan BLE et au scan de QR code.
-
-## Usage prévu
-
-Relay est conçu pour **la résilience des communications quand le réseau manque** : zones sans couverture, coupures, catastrophes naturelles, rassemblements qui saturent le réseau mobile, équipes de terrain. Il ne sert pas à contourner une restriction d'accès imposée par la loi, et ne doit pas être présenté ainsi.
-
-Relay est une preuve de concept, en essai sur le terrain. Il n'a pas fait l'objet d'un audit de sécurité indépendant : ne le confiez pas à des personnes dont la sécurité dépendrait de lui.
+Les échanges entre téléphones demandent du vrai matériel Bluetooth : un émulateur n'a pas de radio BLE. Essayez sur au moins deux téléphones, trois pour le relais.
 
 ## Licence
 
-Relay est un logiciel libre distribué sous la **GNU Affero General Public License, version 3** : voir [LICENSE](LICENSE). Toute version distribuée, modifiée ou non, doit être accompagnée de son code source. Les composants tiers et leurs licences sont listés dans [docs/licences/COMPOSANTS.md](docs/licences/COMPOSANTS.md).
+**Àtagbà Relay** est un logiciel libre distribué sous la **GNU Affero General Public License, version 3** : voir [LICENSE](LICENSE). Toute version distribuée, modifiée ou non, doit être accompagnée de son code source. Cette licence découle de celle de libsignal.
 
-Copyright © 2026 les auteurs de Relay (voir l'historique du dépôt). Projet porté par Àtagbà.
-
-## Journal du projet
-
-Les étapes, problèmes rencontrés et solutions retenues sont tenus dans [docs/JOURNAL.md](docs/JOURNAL.md).
+Copyright © 2026 les auteurs d'Àtagbà Relay (voir l'historique du dépôt).
