@@ -28,9 +28,11 @@ class NomAnnonceTest {
     fun `un nom changé en route invalide le paquet`() {
         val paquet = gossip.createGossipPacket(shortId, bundle(), "Ama")
         val autre = gossip.createGossipPacket(shortId, bundle(), "Koffi")
-        // Même structure, nom remplacé : la signature ne correspond plus
-        val falsifie = paquet.copy(payload = String(paquet.payload).substringBeforeLast("|").plus("|")
-            .plus(String(autre.payload).substringAfterLast("|")).toByteArray())
+        // Même structure, champ du nom (9e) remplacé : la signature ne correspond plus
+        val champs = String(paquet.payload).split("|").toMutableList()
+        champs[8] = String(autre.payload).split("|")[8]
+        val falsifie = paquet.copy(payload = champs.joinToString("|").toByteArray())
+        assertNotEquals(String(paquet.payload), String(falsifie.payload))
         assertNull(gossip.verifyAndExtract(falsifie))
     }
 
