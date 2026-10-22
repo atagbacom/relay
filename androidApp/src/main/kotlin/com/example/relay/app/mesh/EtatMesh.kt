@@ -38,6 +38,9 @@ object EtatMesh {
     data class VersionVue(val code: Long, val nom: String, val chez: String)
     val versionPlusRecente = MutableStateFlow<VersionVue?>(null)
 
+    /** Version publiée sur internet, plus récente que la nôtre. */
+    val majEnLigne = MutableStateFlow<com.relay.app.MiseAJourEnLigne.Disponible?>(null)
+
     /** Batterie en pourcentage et mode appliqué (FULL, LOW, CRITICAL), lus directement par l'écran. */
     val batterie = MutableStateFlow(100)
     val modeBatterie = MutableStateFlow("FULL")

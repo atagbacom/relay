@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import com.relay.app.mesh.EtatMesh
 import com.relay.app.ui.components.Icones
 import com.relay.app.ui.components.LigneConversation
@@ -222,6 +223,7 @@ fun ReglagesScreen(
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 6.dp)
             )
+            MiseAJourEnLigneBloc()
             Text(
                 "Relay est une messagerie sans internet, chiffrée de bout en bout avec le protocole Signal. Conçue par Àtagbà, à Cotonou.",
                 style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 6.dp)
@@ -265,4 +267,78 @@ private fun Info(nom: String, valeur: String) {
         Text(nom, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(valeur.ifEmpty { "…" }, style = MaterialTheme.typography.bodyMedium, fontFamily = PlexMono)
     }
+}
+
+
+/** Mise à jour par internet : interrupteur, vérification, téléchargement vérifié, installation. */
+@Composable
+private fun MiseAJourEnLigneBloc() {
+    val contexte = LocalContext.current
+    val reglages = remember { com.relay.app.Reglages(contexte) }
+    val dispo by com.relay.app.mesh.EtatMesh.majEnLigne.collectAsState()
+    var actif by remember { mutableStateOf(reglages.majEnLigne) }
+    var progres by remember { mutableStateOf<Float?>(null) }
+    var erreur by remember { mutableStateOf<String?>(null) }
+    val portee = rememberCoroutineScope()
+
+    HorizontalDivider(Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.outlineVariant)
+    dispo?.let { d ->
+        Text(
+            "Relay ${d.version} est publié (environ ${(d.taille / 1_000_000).coerceAtLeast(1)} Mo).",
+            style = MaterialTheme.typography.bodyMedium
+        )
+        val p = progres
+        if (p != null) {
+            LinearProgressIndicator(progress = { p }, modifier = Modifier.fillMaxWidth().padding(top = 10.dp))
+        } else {
+            Button(
+                onClick = {
+                    erreur = null
+                    progres = 0f
+                    portee.launch {
+                        val fichier = runCatching {
+                            com.relay.app.MiseAJourEnLigne.telecharger(contexte, d) { progres = it }
+                        }.getOrNull()
+                        progres = null
+                        if (fichier == null) erreur = "Téléchargement interrompu ou fichier non conforme : réessayez avec une meilleure connexion."
+                        else com.relay.app.MiseAJourEnLigne.installer(contexte, fichier)
+                    }
+                },
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.padding(top = 10.dp).fillMaxWidth().height(48.dp)
+            ) { Text("Télécharger et installer") }
+            Text(
+                "La première fois, Android demande d'autoriser Relay à installer des applications : acceptez, puis touchez de nouveau ce bouton.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 6.dp)
+            )
+        }
+        erreur?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 6.dp)) }
+    }
+    Row(
+        Modifier.fillMaxWidth().padding(top = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("Chercher les mises à jour sur internet", style = MaterialTheme.typography.bodyLarge)
+            Text(
+                "Une fois par jour quand il y a internet. github.com voit alors l'adresse IP du téléphone, rien d'autre.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Switch(checked = actif, onCheckedChange = { actif = it; reglages.majEnLigne = it })
+    }
+    OutlinedButton(
+        onClick = {
+            runCatching {
+                contexte.startService(
+                    Intent(contexte, com.relay.app.mesh.MeshService::class.java)
+                        .setAction(com.relay.app.mesh.MeshService.ACTION_VERIFIER_MAJ)
+                )
+            }
+        },
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.padding(top = 8.dp).fillMaxWidth().height(48.dp)
+    ) { Text("Vérifier maintenant") }
 }

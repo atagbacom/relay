@@ -2,4 +2,6 @@
 <!-- Seul le dossier de partage de l'APK est exposé, en lecture, au moment du partage -->
 <paths>
     <cache-path name="partage" path="partage/" />
+    <!-- Mise à jour téléchargée, ouverte par l'installeur d'Android -->
+    <cache-path name="maj" path="maj/" />
 </paths>

@@ -16,6 +16,8 @@ jobs:
     name: APK de débogage et tests
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -64,6 +66,26 @@ jobs:
         with:
           name: relay-debug-apk
           path: androidApp/build/outputs/apk/debug/*.apk
+
+      # Les artefacts sont toujours zippés et demandent un compte GitHub :
+      # l'APK de test d'une PR est aussi publié en pré-version, avec un lien
+      # direct qui s'ouvre sur un téléphone. Même clé que les APK de test.
+      - name: APK de test en lien direct
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          TITRE: ${{ github.event.pull_request.title }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          TAG="essai-pr-$PR"
+          cp androidApp/build/outputs/apk/debug/androidApp-universal-debug.apk relay-essai.apk
+          gh release delete "$TAG" --cleanup-tag --yes 2>/dev/null || true
+          gh release create "$TAG" relay-essai.apk --prerelease --target "$SHA" \
+            --title "Essai PR #$PR" \
+            --notes "APK de test de la PR #$PR ($TITRE), commit ${SHA:0:7}. Clé de test : s'installe par-dessus les autres APK de test, pas par-dessus une version publiée. Ne pas diffuser."
+          URL="https://github.com/${{ github.repository }}/releases/download/$TAG/relay-essai.apk"
+          echo "## APK de test : [relay-essai.apk]($URL)" >> "$GITHUB_STEP_SUMMARY"
 
   demarrage:
     name: Démarrage sur émulateur
