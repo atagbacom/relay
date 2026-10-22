@@ -20,6 +20,21 @@ class Reglages(context: Context) {
         get() = prefs.getString("mode_batterie", "AUTO") ?: "AUTO"
         set(v) = prefs.edit().putString("mode_batterie", v).apply()
 
+    /** Chercher les mises à jour sur internet quand il y en a (github.com voit l'adresse IP). */
+    var majEnLigne: Boolean
+        get() = prefs.getBoolean("maj_en_ligne", true)
+        set(v) = prefs.edit().putBoolean("maj_en_ligne", v).apply()
+
+    /** Dernière vérification en ligne, pour n'en faire qu'une par jour. */
+    var derniereVerifMaj: Long
+        get() = prefs.getLong("derniere_verif_maj", 0L)
+        set(v) = prefs.edit().putLong("derniere_verif_maj", v).apply()
+
+    /** Version déjà signalée par notification, pour ne pas la répéter. */
+    var majSignalee: String
+        get() = prefs.getString("maj_signalee", "").orEmpty()
+        set(v) = prefs.edit().putString("maj_signalee", v).apply()
+
     /** La demande « relais en arrière-plan » a déjà été montrée une fois. */
     var arrierePlanPropose: Boolean
         get() = prefs.getBoolean("arriere_plan_propose", false)

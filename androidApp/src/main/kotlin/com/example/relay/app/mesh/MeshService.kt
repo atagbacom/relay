@@ -32,6 +32,7 @@ class MeshService : Service() {
         /** Après un scan : envoyer notre clé à celui qu'on vient de scanner. */
         const val ACTION_VERIFIER = "com.relay.app.VERIFIER"
         const val ACTION_DIFFUSER_CLES = "com.relay.app.DIFFUSER_CLES"
+        const val ACTION_VERIFIER_MAJ = "com.relay.app.VERIFIER_MAJ"
         const val EXTRA_NONCE = "nonce"
         const val EXTRA_RECIPIENT_ID = "recipient_id"
         const val EXTRA_MESSAGE = "message"
@@ -155,6 +156,7 @@ class MeshService : Service() {
                     // Android ralentit puis coupe un scan qui dure (30 min), et certains
                     // téléphones ne remontent plus les annonces répétées : le radar
                     // restait figé sur la première position. Relancé toutes les 5 min.
+                    if (tour % 20 == 1) scope.launch { verifierMajEnLigne() }
                     if (tour % 20 == 0 && EtatMesh.bluetoothActif.value == true) {
                         runCatching { scanner.start() }
                         repo.relais.purger(System.currentTimeMillis())
@@ -638,6 +640,25 @@ class MeshService : Service() {
         sendPacketTo(peerAddress, packet)
     }
 
+    /** Une fois par jour au plus, et seulement avec internet et si l'utilisateur l'accepte. */
+    private suspend fun verifierMajEnLigne(force: Boolean = false) {
+        val reglages = com.relay.app.Reglages(this)
+        if (!reglages.majEnLigne && !force) return
+        val maintenant = System.currentTimeMillis()
+        if (!force && maintenant - reglages.derniereVerifMaj < 24 * 3600_000L) return
+        if (!com.relay.app.MiseAJourEnLigne.internetDisponible(this)) return
+        reglages.derniereVerifMaj = maintenant
+        val dispo = runCatching { com.relay.app.MiseAJourEnLigne.verifier(this) }
+            .onFailure { EtatMesh.noter("Vérification des mises à jour impossible : ${it.javaClass.simpleName}") }
+            .getOrNull()
+        EtatMesh.majEnLigne.value = dispo
+        if (dispo != null && reglages.majSignalee != dispo.version) {
+            reglages.majSignalee = dispo.version
+            EtatMesh.noter("Relay ${dispo.version} publié en ligne")
+            Notifications.nouvelleVersionEnLigne(this, dispo.version, dispo.taille)
+        }
+    }
+
     private val maVersion by lazy {
         PreKeyGossip.VersionAnnoncee(com.relay.app.VersionRelay.code(this), com.relay.app.VersionRelay.nom(this))
     }
@@ -810,6 +831,7 @@ class MeshService : Service() {
             }
             // Notre nom vient de changer : nos voisins le reçoivent tout de suite
             ACTION_DIFFUSER_CLES -> scope.launch { pret.await(); diffuserNosCles() }
+            ACTION_VERIFIER_MAJ -> scope.launch { verifierMajEnLigne(force = true) }
             ACTION_RELANCER -> scope.launch {
                 pret.await()
                 EtatMesh.noter("Relance du mesh demandée")

@@ -96,6 +96,27 @@ object Notifications {
         nmc.notify(9002, notif)
     }
 
+    /** Version publiée en ligne : proposer de la télécharger depuis les réglages. */
+    @SuppressLint("MissingPermission")
+    fun nouvelleVersionEnLigne(context: Context, version: String, taille: Long) {
+        val nmc = NotificationManagerCompat.from(context)
+        if (!nmc.areNotificationsEnabled()) return
+        val ouvrir = PendingIntent.getActivity(
+            context, 12, Intent(context, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val mo = (taille / 1_000_000).coerceAtLeast(1)
+        val notif = NotificationCompat.Builder(context, CANAL_ETAT)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setColor(0xFF13294B.toInt())
+            .setContentTitle("Relay $version est disponible")
+            .setContentText("Téléchargement d'environ $mo Mo, depuis Réglages › À propos.")
+            .setContentIntent(ouvrir)
+            .setAutoCancel(true)
+            .build()
+        nmc.notify(9003, notif)
+    }
+
     fun retirerBluetoothEteint(context: Context) {
         NotificationManagerCompat.from(context).cancel(ID_BLUETOOTH)
     }
