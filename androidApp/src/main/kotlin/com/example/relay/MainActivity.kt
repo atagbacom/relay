@@ -147,9 +147,13 @@ fun RelayApp(
     viewModel: MainViewModel,
     contactAOuvrir: MutableState<String?> = mutableStateOf(null),
     urgence: MutableState<Boolean> = mutableStateOf(false),
+    /** Écran d'ouverture : l'accueil, sauf pour les captures de démonstration. */
+    ecranInitial: Screen = Screen.Reseau,
 ) {
-    var screen by remember { mutableStateOf<Screen>(Screen.Reseau) }
-    var onglet by remember { mutableStateOf(Onglet.RESEAU) }
+    var screen by remember { mutableStateOf(ecranInitial) }
+    var onglet by remember {
+        mutableStateOf(if (ecranInitial is Screen.Messages || ecranInitial is Screen.Conversation) Onglet.MESSAGES else Onglet.RESEAU)
+    }
     var qrReturnContact by remember { mutableStateOf<String?>(null) }
 
     fun versOnglet(o: Onglet) {
