@@ -141,6 +141,9 @@ class MeshService : Service() {
             setupGattServer()
 
             pret.complete(Unit)
+            // Messages restés sans paquet (session absente à l'envoi, migration de
+            // la base) : rechiffrés dès le démarrage quand une session existe
+            scope.launch { repo.contactsAvecNonRemis().forEach { envoyerEnAttente(it) } }
             lancerFileBle()
             scope.launch {
                 var tour = 0
@@ -384,9 +387,17 @@ class MeshService : Service() {
             scope.launch { envoyerAck(packet) }
         }
     }
+    private val anciensSignales = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
     private fun setupScanner() {
         scanner.onPeerDiscovered = { address, shortId, rssi ->
-            if (shortId != localShortId) {
+            if (RelayIdentity.ancienFormat(shortId)) {
+                // Version d'avant l'identifiant de 64 bits : incompatible, on le dit
+                if (anciensSignales.add(shortId)) {
+                    EtatMesh.noter("Appareil $shortId sur une ancienne version de Relay, incompatible")
+                    Notifications.ancienneVersion(this)
+                }
+            } else if (shortId != localShortId) {
                 // Revenu après 30 s d'absence (Bluetooth coupé, parti puis revenu) :
                 // traité comme une nouvelle rencontre, clés et messages repartent
                 val isNew = !nodeTracker.getActiveNodes(withinMs = 30_000)
