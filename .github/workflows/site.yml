@@ -1,0 +1,34 @@
+name: Site
+
+# Publie la landing page (dossier site/) sur GitHub Pages à chaque fusion
+# dans main qui la modifie. Adresse : https://atagbacom.github.io/relay/
+on:
+  push:
+    branches: [main]
+    paths: ["site/**", ".github/workflows/site.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  publier:
+    name: Publier la landing page
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploiement.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deploiement
+        uses: actions/deploy-pages@v4
