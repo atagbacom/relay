@@ -27,12 +27,13 @@ class PreKeyGossip(private val localIdentity: IdentityKeyPair) {
     fun createGossipPacket(
         shortId: String,
         bundle: PreKeyBundle,
-        nom: String? = null
+        nom: String? = null,
+        version: VersionAnnoncee? = null
     ): RelayPacket {
         // Sérialise le bundle, suivi du nom choisi : signé avec lui, il ne peut
         // pas être changé en route. Un changement de nom se propage ainsi sans
         // nouveau scan (avant : il ne partait que dans le QR).
-        val bundleBytes = serializeBundle(bundle, nom)
+        val bundleBytes = serializeBundle(bundle, nom, version)
 
         // Signe le bundle avec la clé privée Ed25519 locale
         // Quiconque reçoit ce paquet peut vérifier la signature
@@ -95,7 +96,17 @@ class PreKeyGossip(private val localIdentity: IdentityKeyPair) {
             ?.ifEmpty { null }
     }.getOrNull()
 
-    private fun serializeBundle(bundle: PreKeyBundle, nom: String?): ByteArray {
+    /** Version de Relay annoncée dans un paquet déjà vérifié, s'il y en a une. */
+    fun versionDe(packet: RelayPacket): VersionAnnoncee? = runCatching {
+        val champ = String(packet.payload, Charsets.UTF_8).split("|").getOrNull(9) ?: return null
+        val (code, nom) = champ.split("/", limit = 2)
+        VersionAnnoncee(code.toLong(), String(Base64.getUrlDecoder().decode(nom), Charsets.UTF_8).take(20))
+    }.getOrNull()
+
+    /** Numéro de version (croissant) et nom lisible (0.3.0). */
+    data class VersionAnnoncee(val code: Long, val nom: String)
+
+    private fun serializeBundle(bundle: PreKeyBundle, nom: String?, version: VersionAnnoncee?): ByteArray {
         val parts = listOf(
             bundle.registrationId.toString(),
             bundle.deviceId.toString(),
@@ -107,7 +118,9 @@ class PreKeyGossip(private val localIdentity: IdentityKeyPair) {
             Base64.getEncoder().encodeToString(bundle.identityKey.serialize()),
             // 9e champ, ignoré par les versions précédentes ; base64 URL : jamais de « | »
             nom?.trim()?.take(40)?.takeIf { it.isNotEmpty() }
-                ?.let { Base64.getUrlEncoder().withoutPadding().encodeToString(it.toByteArray(Charsets.UTF_8)) } ?: ""
+                ?.let { Base64.getUrlEncoder().withoutPadding().encodeToString(it.toByteArray(Charsets.UTF_8)) } ?: "",
+            // 10e champ : version de Relay, pour prévenir qui a une version plus ancienne
+            version?.let { "${it.code}/" + Base64.getUrlEncoder().withoutPadding().encodeToString(it.nom.toByteArray(Charsets.UTF_8)) } ?: ""
         )
         return parts.joinToString("|").toByteArray(Charsets.UTF_8)
     }

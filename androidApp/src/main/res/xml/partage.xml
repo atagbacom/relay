@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Seul le dossier de partage de l'APK est exposé, en lecture, au moment du partage -->
+<paths>
+    <cache-path name="partage" path="partage/" />
+</paths>

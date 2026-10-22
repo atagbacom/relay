@@ -34,6 +34,10 @@ object EtatMesh {
     val serveur = MutableStateFlow("pas démarré")
     val identifiant = MutableStateFlow("")
 
+    /** Un appareil croisé a une version de Relay plus récente que la nôtre. */
+    data class VersionVue(val code: Long, val nom: String, val chez: String)
+    val versionPlusRecente = MutableStateFlow<VersionVue?>(null)
+
     /** Batterie en pourcentage et mode appliqué (FULL, LOW, CRITICAL), lus directement par l'écran. */
     val batterie = MutableStateFlow(100)
     val modeBatterie = MutableStateFlow("FULL")

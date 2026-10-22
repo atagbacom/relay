@@ -203,6 +203,25 @@ fun ReglagesScreen(
 
         Bloc("À propos") {
             Info("Version", version)
+            val plusRecente by com.relay.app.mesh.EtatMesh.versionPlusRecente.collectAsState()
+            plusRecente?.let { v ->
+                Text(
+                    "Relay ${v.nom} est disponible : ${v.chez} l'a déjà. Demandez-lui de vous la partager.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+            Button(
+                onClick = { runCatching { com.relay.app.VersionRelay.partager(contexte) } },
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.padding(top = 10.dp).fillMaxWidth().height(48.dp)
+            ) { Text("Partager Relay") }
+            Text(
+                "Envoie l'application par Xender, Quick Share ou Bluetooth, sans internet. Le téléphone qui la reçoit refuse toute copie modifiée.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 6.dp)
+            )
             Text(
                 "Relay est une messagerie sans internet, chiffrée de bout en bout avec le protocole Signal. Conçue par Àtagbà, à Cotonou.",
                 style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 6.dp)
