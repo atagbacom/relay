@@ -5,6 +5,7 @@
         <activity
             android:name="com.relay.app.Demonstration"
             android:exported="true"
+            android:launchMode="singleTop"
             android:theme="@android:style/Theme.Material.Light.NoActionBar" />
     </application>
 </manifest>

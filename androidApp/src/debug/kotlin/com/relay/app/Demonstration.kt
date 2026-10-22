@@ -28,18 +28,27 @@ class Demonstration : ComponentActivity() {
 
     private val viewModel: MainViewModel by viewModels()
 
+    /** Écran affiché ; changé sans redémarrer l'activité (vidéo sans écran blanc). */
+    private val ecran = mutableStateOf("reseau")
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        intent.getStringExtra("ecran")?.let { ecran.value = it }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        val ecran = intent.getStringExtra("ecran") ?: "reseau"
+        ecran.value = intent.getStringExtra("ecran") ?: "reseau"
         setContent {
             RelayTheme {
                 var koffi by remember { mutableStateOf<String?>(null) }
                 LaunchedEffect(Unit) { koffi = remplir() }
                 val k = koffi ?: return@RelayTheme
-                RelayApp(
+                val e by ecran
+                key(e) { RelayApp(
                     viewModel,
-                    ecranInitial = when (ecran) {
+                    ecranInitial = when (e) {
                         "messages" -> Screen.Messages
                         "conversation" -> Screen.Conversation(k)
                         "fiche" -> Screen.Fiche(k)
@@ -48,7 +57,7 @@ class Demonstration : ComponentActivity() {
                         "reglages" -> Screen.Reglages
                         else -> Screen.Reseau
                     }
-                )
+                ) }
             }
         }
     }
