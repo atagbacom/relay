@@ -38,8 +38,12 @@ sleep 7
 aller conversation; sleep 6
 aller verifier;     sleep 5
 aller urgence;      sleep 3
-adb shell input swipe 540 1305 540 1305 2600
-sleep 5
+# Vrai appui maintenu (un glissement sur place n'était pas reconnu)
+adb shell input motionevent DOWN 540 1305
+sleep 2.8
+adb shell input motionevent UP 540 1305
+sleep 4
+adb exec-out screencap -p > captures/relay-urgence-envoyee.png
 adb shell pkill -INT screenrecord || true
 wait "$ENREGISTREMENT" 2>/dev/null || true
 sleep 2
