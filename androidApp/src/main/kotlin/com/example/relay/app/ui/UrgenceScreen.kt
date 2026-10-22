@@ -76,8 +76,14 @@ fun UrgenceScreen(viewModel: MainViewModel, onBack: () -> Unit) {
                 FilterChip(
                     selected = choisi,
                     onClick = { if (suivi == null) type = t.nom },
-                    label = { Text(t.nom, maxLines = 1) },
-                    modifier = Modifier.weight(1f).heightIn(min = 44.dp),
+                    // Sur deux lignes : « Besoin médical », « Je suis en sécurité » étaient coupés
+                    label = {
+                        Text(
+                            t.nom, maxLines = 2, textAlign = TextAlign.Center,
+                            style = MaterialTheme.typography.labelLarge, modifier = Modifier.fillMaxWidth()
+                        )
+                    },
+                    modifier = Modifier.weight(1f).heightIn(min = 56.dp),
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = RelayPalette.Or,
                         selectedLabelColor = RelayPalette.Encre,

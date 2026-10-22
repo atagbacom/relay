@@ -194,6 +194,19 @@ fun RelayApp(
     // Une seule fois : ne pas laisser l'économie de batterie couper le relais
     ArrierePlanDialogue()
 
+    // Icônes de la barre d'état claires sur les écrans sombres (avant : heure et
+    // batterie sombres sur bleu nuit, illisibles), sombres sur les écrans clairs
+    val vue = androidx.compose.ui.platform.LocalView.current
+    val fondSombre = screen is Screen.Reseau || screen is Screen.Urgence || screen is Screen.Qr ||
+        screen is Screen.Alerte || androidx.compose.foundation.isSystemInDarkTheme()
+    if (!vue.isInEditMode) {
+        SideEffect {
+            (vue.context as? android.app.Activity)?.window?.let { fenetre ->
+                androidx.core.view.WindowCompat.getInsetsController(fenetre, vue).isAppearanceLightStatusBars = !fondSombre
+            }
+        }
+    }
+
     val avecBarre = screen is Screen.Reseau || screen is Screen.Messages
     val bluetooth by com.relay.app.mesh.EtatMesh.bluetoothActif.collectAsState()
     Scaffold(

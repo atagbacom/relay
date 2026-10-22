@@ -55,6 +55,9 @@ class Demonstration : ComponentActivity() {
 
     /** Contacts, messages et appareils à portée d'exemple. Retourne l'identifiant de Koffi. */
     private suspend fun remplir(): String {
+        // Une seule fois : chaque écran photographié relance l'activité
+        val prefs = getSharedPreferences("demonstration", MODE_PRIVATE)
+        prefs.getString("koffi", null)?.let { pairsAPortee(it, prefs); return it }
         val reglages = Reglages(this)
         reglages.monNom = "Ama"
         reglages.arrierePlanPropose = true
@@ -85,15 +88,23 @@ class Demonstration : ComponentActivity() {
         message(aicha, "IN", "ALERTE · Je suis en sécurité", 95)
         message(aicha, "OUT", "Merci, bien noté.", 90)
 
-        EtatMesh.majPairs(listOf(
-            EtatMesh.PairVu(koffi.shortId, "AA:00:00:00:00:01", -58, maintenant),
-            EtatMesh.PairVu(aicha.shortId, "AA:00:00:00:00:02", -71, maintenant),
-            EtatMesh.PairVu(inconnu.shortId, "AA:00:00:00:00:03", -84, maintenant),
+        prefs.edit().putString("koffi", koffi.shortId).putString("aicha", aicha.shortId)
+            .putString("inconnu", inconnu.shortId).commit()
+        pairsAPortee(koffi.shortId, prefs)
+        return koffi.shortId
+    }
+
+    /** Appareils à portée et état du réseau (en mémoire : à refaire à chaque lancement). */
+    private fun pairsAPortee(koffi: String, prefs: android.content.SharedPreferences) {
+        val maintenant = System.currentTimeMillis()
+        EtatMesh.majPairs(listOfNotNull(
+            EtatMesh.PairVu(koffi, "AA:00:00:00:00:01", -58, maintenant),
+            prefs.getString("aicha", null)?.let { EtatMesh.PairVu(it, "AA:00:00:00:00:02", -71, maintenant) },
+            prefs.getString("inconnu", null)?.let { EtatMesh.PairVu(it, "AA:00:00:00:00:03", -84, maintenant) },
         ))
         EtatMesh.batterie.value = 76
         EtatMesh.bluetoothActif.value = true
         EtatMesh.annonce.value = "active"
         EtatMesh.scan.value = "actif"
-        return koffi.shortId
     }
 }
