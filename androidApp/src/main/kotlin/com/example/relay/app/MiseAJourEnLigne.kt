@@ -63,7 +63,9 @@ object MiseAJourEnLigne {
     suspend fun verifier(context: Context): Disponible? = withContext(Dispatchers.IO) {
         val versions = JSONArray(lire("https://api.github.com/repos/$DEPOT/releases?per_page=5"))
         val derniere = (0 until versions.length()).map { versions.getJSONObject(it) }
-            .firstOrNull { !it.optBoolean("draft") } ?: return@withContext null
+            // Seules les versions publiées (tags vX.Y.Z), pas les APK de test essai-pr-N
+            .firstOrNull { !it.optBoolean("draft") && it.getString("tag_name").matches(Regex("v\\d+\\.\\d+\\.\\d+.*")) }
+            ?: return@withContext null
         val version = derniere.getString("tag_name").removePrefix("v")
         if (!plusRecente(version, VersionRelay.nom(context))) return@withContext null
         val fichiers = derniere.getJSONArray("assets").let { a -> (0 until a.length()).map { a.getJSONObject(it) } }
