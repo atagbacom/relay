@@ -634,8 +634,12 @@ class MeshService : Service() {
 
     private suspend fun sendOurPreKeys(peerAddress: String) {
         val bundle = session.createPreKeyBundle(avecCleUnique = false)
-        val packet = gossip.createGossipPacket(localShortId, bundle, monNom())
+        val packet = gossip.createGossipPacket(localShortId, bundle, monNom(), maVersion)
         sendPacketTo(peerAddress, packet)
+    }
+
+    private val maVersion by lazy {
+        PreKeyGossip.VersionAnnoncee(com.relay.app.VersionRelay.code(this), com.relay.app.VersionRelay.nom(this))
     }
 
     private fun monNom(): String? = com.relay.app.Reglages(this).monNom.ifBlank { null }
@@ -646,7 +650,7 @@ class MeshService : Service() {
         val cibles = if (direct != null) listOf(direct.macAddress)
                      else nodeTracker.getBestRelays(localShortId, 3).map { it.macAddress }
         if (cibles.isEmpty()) return
-        val packet = gossip.createGossipPacket(localShortId, session.createPreKeyBundle(avecCleUnique = false), monNom())
+        val packet = gossip.createGossipPacket(localShortId, session.createPreKeyBundle(avecCleUnique = false), monNom(), maVersion)
         cibles.forEach { sendPacketTo(it, packet) }
     }
 
@@ -654,7 +658,7 @@ class MeshService : Service() {
     private suspend fun diffuserNosCles() {
         val voisins = nodeTracker.getActiveNodes(withinMs = 30_000)
         if (voisins.isEmpty()) return
-        val packet = gossip.createGossipPacket(localShortId, session.createPreKeyBundle(avecCleUnique = false), monNom())
+        val packet = gossip.createGossipPacket(localShortId, session.createPreKeyBundle(avecCleUnique = false), monNom(), maVersion)
         voisins.forEach { sendPacketTo(it.macAddress, packet) }
     }
 
@@ -670,6 +674,17 @@ class MeshService : Service() {
             return
         }
         val senderId = packet.senderId
+
+        // Version plus récente chez cet appareil : prévenir, une fois par version
+        gossip.versionDe(packet)?.let { v ->
+            val connue = EtatMesh.versionPlusRecente.value
+            if (v.code > maVersion.code && (connue == null || v.code > connue.code)) {
+                val chez = repo.getContact(senderId)?.nomAffiche ?: "Appareil ${senderId.takeLast(4).uppercase()}"
+                EtatMesh.versionPlusRecente.value = EtatMesh.VersionVue(v.code, v.nom, chez)
+                EtatMesh.noter("Version ${v.nom} de Relay vue chez $chez (nous : ${maVersion.nom})")
+                Notifications.nouvelleVersion(this, v.nom, chez)
+            }
+        }
 
         val existant = repo.getContact(senderId)
         val nomAnnonce = gossip.nomDe(packet)

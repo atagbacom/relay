@@ -33,4 +33,19 @@ class NomAnnonceTest {
             .plus(String(autre.payload).substringAfterLast("|")).toByteArray())
         assertNull(gossip.verifyAndExtract(falsifie))
     }
+
+    @Test
+    fun `la version voyage avec les clés et le nom`() {
+        val v = PreKeyGossip.VersionAnnoncee(42, "0.3.0")
+        val paquet = gossip.createGossipPacket(shortId, bundle(), "Ama", v)
+        assertNotNull(gossip.verifyAndExtract(paquet))
+        assertEquals("Ama", gossip.nomDe(paquet))
+        assertEquals(v, gossip.versionDe(paquet))
+    }
+
+    @Test
+    fun `paquet d'une version précédente, sans version`() {
+        val paquet = gossip.createGossipPacket(shortId, bundle(), "Ama")
+        assertNull(gossip.versionDe(paquet))
+    }
 }

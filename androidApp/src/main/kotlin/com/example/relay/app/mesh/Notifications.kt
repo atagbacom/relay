@@ -73,6 +73,29 @@ object Notifications {
         nmc.notify(ID_BLUETOOTH, notif)
     }
 
+    /** Un appareil croisé a une version plus récente : la lui demander. */
+    @SuppressLint("MissingPermission")
+    fun nouvelleVersion(context: Context, version: String, chez: String) {
+        val nmc = NotificationManagerCompat.from(context)
+        if (!nmc.areNotificationsEnabled()) return
+        val ouvrir = PendingIntent.getActivity(
+            context, 11, Intent(context, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notif = NotificationCompat.Builder(context, CANAL_ETAT)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setColor(0xFF13294B.toInt())
+            .setContentTitle("Relay $version est disponible")
+            .setContentText("$chez l'a déjà : demandez-lui de vous la partager (Réglages › Partager Relay).")
+            .setStyle(NotificationCompat.BigTextStyle().bigText(
+                "$chez a la version $version de Relay. Demandez-lui de vous l'envoyer : Réglages › Partager Relay, puis Xender, Quick Share ou Bluetooth."
+            ))
+            .setContentIntent(ouvrir)
+            .setAutoCancel(true)
+            .build()
+        nmc.notify(9002, notif)
+    }
+
     fun retirerBluetoothEteint(context: Context) {
         NotificationManagerCompat.from(context).cancel(ID_BLUETOOTH)
     }

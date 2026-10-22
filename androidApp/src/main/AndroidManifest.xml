@@ -69,6 +69,16 @@
             android:name="com.relay.app.mesh.MeshService"
             android:foregroundServiceType="connectedDevice"
             android:exported="false" />
+        <!-- Partage de l'APK installé (« Partager Relay ») -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.partage"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/partage" />
+        </provider>
         <receiver
             android:name="com.relay.app.mesh.Demarrage"
             android:exported="false">
