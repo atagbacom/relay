@@ -25,6 +25,26 @@ for ecran in reseau messages conversation fiche urgence reglages verifier; do
   adb exec-out screencap -p > "captures/relay-$ecran.png"
   echo "capture : $ecran ($(du -h "captures/relay-$ecran.png" | cut -f1))"
 done
+# Courte vidéo de démonstration : radar, conversation, vérification, puis
+# un vrai maintien de 2,5 s sur le bouton d'urgence (écran Pixel 6, 1080x2400)
+ouvrir() {
+  adb shell am force-stop "$PAQUET"
+  adb shell am start -n "$PAQUET/com.relay.app.Demonstration" --es ecran "$1" > /dev/null
+}
+adb shell screenrecord --bit-rate 6000000 --time-limit 45 /sdcard/relay-demo.mp4 &
+ENREGISTREMENT=$!
+sleep 1
+ouvrir reseau;       sleep 7
+ouvrir conversation; sleep 5
+ouvrir verifier;     sleep 5
+ouvrir urgence;      sleep 3
+adb shell input swipe 540 1305 540 1305 2600
+sleep 5
+adb shell pkill -INT screenrecord || true
+wait "$ENREGISTREMENT" 2>/dev/null || true
+sleep 2
+adb pull /sdcard/relay-demo.mp4 captures/relay-demo.mp4 && echo "vidéo : $(du -h captures/relay-demo.mp4 | cut -f1)"
+
 adb logcat -d > captures/logcat.txt
 
 if grep -q "FATAL EXCEPTION" captures/logcat.txt; then
