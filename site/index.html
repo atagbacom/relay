@@ -174,6 +174,11 @@ section.bloc > .enveloppe { display: grid; grid-template-columns: 260px 1fr; gap
 .etapes p { color: var(--doux); font-size: 15.5px; margin-top: 4px; }
 .etapes .chiffre { font-family: var(--mono); color: var(--texte); font-size: 14.5px; }
 
+.ecrans { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+.ecrans figure { margin: 0; display: grid; gap: 10px; }
+.ecrans img { width: 100%; height: auto; border-radius: 18px; border: 1px solid var(--filet); display: block; }
+.ecrans figcaption { font-size: 14.5px; color: var(--doux); }
+
 .paliers { display: grid; grid-template-columns: repeat(3, 1fr); }
 .jauge { grid-column: 1 / -1; height: 4px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; margin-bottom: 22px; }
 .jauge i:nth-child(1) { background: var(--orange); }
@@ -224,6 +229,7 @@ footer .enveloppe { padding-block: 32px 40px; display: flex; flex-wrap: wrap; ju
 footer a { color: var(--doux); }
 
 @media (max-width: 900px) {
+  .ecrans { grid-template-columns: repeat(2, 1fr); }
   .ouverture .enveloppe { grid-template-columns: 1fr; padding-block: 40px; gap: 32px; }
   .radar-cadre { max-width: 440px; margin: 0 auto; }
   .specs dl { grid-template-columns: repeat(2, 1fr); }
@@ -254,6 +260,7 @@ footer a { color: var(--doux); }
     </a>
     <nav aria-label="Sections">
       <a href="#voyage">Fonctionnement</a>
+      <a href="#ecrans">L'application</a>
       <a href="#confiance">Confiance</a>
       <a href="#usages">Usages</a>
       <a href="#questions">Questions</a>
@@ -310,6 +317,23 @@ footer a { color: var(--doux); }
           <li><span class="num">3</span><div><h3>Gardé, puis relayé</h3><p>Si le destinataire n'est pas là, le message attend jusqu'à <span class="chiffre">48 h</span> et repart dès qu'un nouveau téléphone passe.</p></div></li>
           <li><span class="num">4</span><div><h3>Remis</h3><p>À l'arrivée, un accusé de réception revient vers vous et le message passe à « remis ».</p></div></li>
         </ol>
+      </div>
+    </div>
+  </section>
+
+  <section class="bloc" id="ecrans">
+    <div class="enveloppe">
+      <div class="titre-bloc">
+        <h2>L'application</h2>
+        <p>Quatre écrans, pris sur la version d'essai avec des exemples.</p>
+      </div>
+      <div class="corps">
+        <ul class="ecrans">
+          <li><figure><img src="captures/relay-reseau.webp" width="540" height="1200" loading="lazy" decoding="async" alt="Écran Réseau : radar des trois appareils à portée et liste des conversations"><figcaption>Le radar des téléphones à portée</figcaption></figure></li>
+          <li><figure><img src="captures/relay-conversation.webp" width="540" height="1200" loading="lazy" decoding="async" alt="Conversation avec Koffi : messages remis et un message en route"><figcaption>Chaque message montre son trajet</figcaption></figure></li>
+          <li><figure><img src="captures/relay-verifier.webp" width="540" height="1200" loading="lazy" decoding="async" alt="Écran Vérifier en personne : code QR et empreinte de la clé"><figcaption>Vérifier quelqu'un en un scan</figcaption></figure></li>
+          <li><figure><img src="captures/relay-urgence.webp" width="540" height="1200" loading="lazy" decoding="async" alt="Écran Urgence : bouton Danger à maintenir deux secondes"><figcaption>L'alerte en un geste</figcaption></figure></li>
+        </ul>
       </div>
     </div>
   </section>
