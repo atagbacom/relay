@@ -86,6 +86,26 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Un autre contact au même nom, connu avant celui-ci : probablement la même
+     * personne qui a réinstallé Relay ou changé de téléphone (nouvelle clé).
+     */
+    fun ancienAppareilPossible(contactId: String): Flow<RelayContact?> =
+        repo.observeContacts().map { liste ->
+            val c = liste.find { it.shortId == contactId } ?: return@map null
+            val nom = c.nomAffiche?.trim()?.lowercase() ?: return@map null
+            liste.filter { it.shortId != contactId && it.nomAffiche?.trim()?.lowercase() == nom && it.firstSeenAt < c.firstSeenAt }
+                .maxByOrNull { it.firstSeenAt }
+        }
+
+    fun regrouper(ancien: String, nouveau: String) {
+        viewModelScope.launch { repo.regrouper(ancien, nouveau) }
+    }
+
+    fun supprimerContact(contactId: String) {
+        viewModelScope.launch { repo.supprimerContact(contactId) }
+    }
+
     fun getContact(contactId: String): Flow<RelayContact?> {
         return repo.observeContacts().map { list ->
             list.find { it.shortId == contactId }

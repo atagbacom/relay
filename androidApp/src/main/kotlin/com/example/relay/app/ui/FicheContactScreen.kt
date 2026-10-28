@@ -40,7 +40,11 @@ fun FicheContactScreen(
     onBack: () -> Unit,
     onEcrire: () -> Unit,
     onVerifier: () -> Unit,
+    onSupprime: () -> Unit = onBack,
 ) {
+    val ancien by viewModel.ancienAppareilPossible(contactId).collectAsState(null)
+    var confirmerRegroupement by remember { mutableStateOf(false) }
+    var confirmerSuppression by remember { mutableStateOf(false) }
     val contact by viewModel.getContact(contactId).collectAsState(null)
     val messages by viewModel.messagesForContact(contactId).collectAsState(emptyList())
     val enAttente = messages.count { it.direction == "OUT" && !it.delivered }
@@ -106,6 +110,31 @@ fun FicheContactScreen(
             }
         }
 
+        // ── Même personne, autre clé ? ─────────────────────────
+        ancien?.let { a ->
+            Surface(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.secondaryContainer
+            ) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "C'est peut-être ${a.nomAffiche} qui a réinstallé Relay ou changé de téléphone",
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    Text(
+                        "Un contact au même nom existe déjà (appareil ${a.shortId.takeLast(4).uppercase()}), avec une autre clé. Si c'est la même personne, regroupez-les : l'historique passe sur ce contact et l'ancien disparaît.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    OutlinedButton(
+                        onClick = { confirmerRegroupement = true },
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                    ) { Text("Regrouper les deux") }
+                }
+            }
+        }
+
         // ── Actions ────────────────────────────────────────────
         Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (confiance != Confiance.VERIFIE_PERSONNE) {
@@ -122,7 +151,44 @@ fun FicheContactScreen(
             OutlinedButton(onClick = onEcrire, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().height(52.dp)) {
                 Text("Écrire", style = MaterialTheme.typography.labelLarge)
             }
+            TextButton(
+                onClick = { confirmerSuppression = true },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+            ) { Text("Supprimer le contact", color = MaterialTheme.colorScheme.error) }
         }
+    }
+
+    ancien?.let { a ->
+        if (confirmerRegroupement) {
+            AlertDialog(
+                onDismissRequest = { confirmerRegroupement = false },
+                title = { Text("Regrouper avec l'ancien contact ?") },
+                text = {
+                    Text(
+                        "Les messages de l'appareil ${a.shortId.takeLast(4).uppercase()} passent sur ce contact, et l'ancien est supprimé. " +
+                            "La confiance ne se transmet pas : la nouvelle clé reste à vérifier en personne, pour être sûr que c'est bien ${a.nomAffiche}."
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = { viewModel.regrouper(a.shortId, contactId); confirmerRegroupement = false }) { Text("Regrouper") }
+                },
+                dismissButton = { TextButton(onClick = { confirmerRegroupement = false }) { Text("Annuler") } }
+            )
+        }
+    }
+
+    if (confirmerSuppression) {
+        AlertDialog(
+            onDismissRequest = { confirmerSuppression = false },
+            title = { Text("Supprimer ce contact ?") },
+            text = { Text("La conversation et les messages en attente pour ce contact sont effacés de ce téléphone. Si l'appareil revient à portée, il réapparaîtra comme un nouveau contact.") },
+            confirmButton = {
+                TextButton(onClick = { viewModel.supprimerContact(contactId); confirmerSuppression = false; onSupprime() }) {
+                    Text("Supprimer", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { confirmerSuppression = false }) { Text("Annuler") } }
+        )
     }
 
     if (renommer) {
