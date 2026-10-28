@@ -263,6 +263,7 @@ fun RelayApp(
                 is Screen.Fiche -> FicheContactScreen(
                     contactId = s.contactId,
                     viewModel = viewModel,
+                    onSupprime = { versOnglet(Onglet.MESSAGES) },
                     onBack = { screen = Screen.Conversation(s.contactId) },
                     onEcrire = { screen = Screen.Conversation(s.contactId) },
                     onVerifier = {

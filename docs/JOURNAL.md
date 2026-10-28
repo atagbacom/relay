@@ -342,6 +342,17 @@ Chaque entrée suit le même schéma : **constat**, **cause**, **solution**, **l
 
 > **Leçon.** Un mécanisme de réparation automatique doit agir sur une preuve du problème (l'autre dit qu'il ne déchiffre pas), jamais sur un symptôme ambigu (un accusé qui tarde peut venir de la radio).
 
+### 25. Quelqu'un réinstalle Relay : un second contact apparaît
+
+- **Constat** (essai terrain). Après une désinstallation puis une réinstallation, la personne revient comme un nouveau contact ; l'ancien reste dans la liste.
+- **Cause.** Relay reconnaît un téléphone à sa clé, stockée dans l'application : désinstaller l'efface, réinstaller en crée une autre. Une mise à jour installée par-dessus garde les données. Relay ne doit pas fusionner seul deux clés différentes : n'importe qui pourrait prendre le nom de quelqu'un et récupérer sa conversation.
+- **Solution.**
+  - la fiche d'un contact signale un contact plus ancien au même nom : « C'est peut-être Koffi qui a réinstallé Relay ou changé de téléphone » ;
+  - regroupement sur confirmation : l'historique passe au nouveau contact, l'ancien disparaît ; la confiance ne se transmet pas, la nouvelle clé reste à vérifier en personne ;
+  - suppression d'un contact (messages, envois en attente, session).
+
+> **Leçon.** Quand la sécurité interdit de deviner, l'interface doit aider l'utilisateur à décider, en lui disant ce qu'elle ne peut pas garantir.
+
 ---
 
 ## Points ouverts

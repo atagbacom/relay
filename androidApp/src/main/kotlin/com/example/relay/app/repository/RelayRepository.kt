@@ -73,6 +73,39 @@ class RelayRepository(context: Context) {
         contactDao.save(contact.toEntity())
     }
 
+    /**
+     * Supprime un contact et tout ce qui le concerne : messages, envois en
+     * attente, session de chiffrement. Sert surtout à retirer l'ancienne
+     * identité de quelqu'un qui a réinstallé Relay.
+     */
+    suspend fun supprimerContact(shortId: String) {
+        messageDao.supprimerPour(shortId)
+        oublierAppareil(shortId)
+    }
+
+    /**
+     * Même personne, nouvelle clé (réinstallation, nouveau téléphone) :
+     * l'historique de l'ancien contact passe au nouveau, le nom donné à la
+     * main aussi s'il n'en a pas. La confiance ne se transmet pas : la
+     * nouvelle clé reste à vérifier.
+     */
+    suspend fun regrouper(ancien: String, nouveau: String) {
+        if (ancien == nouveau) return
+        val a = contactDao.get(ancien) ?: return
+        val n = contactDao.get(nouveau) ?: return
+        messageDao.reassigner(ancien, nouveau)
+        if (n.alias == null && a.alias != null) contactDao.save(n.copy(alias = a.alias))
+        oublierAppareil(ancien)
+    }
+
+    private suspend fun oublierAppareil(shortId: String) {
+        envois.supprimerPour(shortId)
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            db.signalRecordDao().delete("session", "$shortId:1")
+        }
+        contactDao.supprimer(shortId)
+    }
+
     suspend fun upgradeTrust(shortId: String, level: TrustLevel) {
         val existing = contactDao.get(shortId) ?: return
         val current = TrustLevel.valueOf(existing.trustLevel)

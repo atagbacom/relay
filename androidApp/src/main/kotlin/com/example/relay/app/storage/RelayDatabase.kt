@@ -110,6 +110,9 @@ interface EnvoiDao {
 
     @Query("SELECT * FROM envois WHERE destinataire = :destinataire")
     suspend fun pour(destinataire: String): List<EnvoiEntity>
+
+    @Query("DELETE FROM envois WHERE destinataire = :destinataire")
+    suspend fun supprimerPour(destinataire: String)
 }
 
 /** Appels synchrones : le protocole Signal les fait depuis Dispatchers.IO. */
@@ -154,6 +157,9 @@ interface ContactDao {
 
     @Query("UPDATE contacts SET trustLevel = :level WHERE shortId = :shortId")
     suspend fun upgradeTrust(shortId: String, level: String)
+
+    @Query("DELETE FROM contacts WHERE shortId = :shortId")
+    suspend fun supprimer(shortId: String)
 }
 
 @Dao
@@ -181,6 +187,13 @@ interface MessageDao {
 
     @Query("UPDATE messages SET delivered = 1 WHERE id = :id")
     suspend fun markDelivered(id: String)
+
+    /** Regroupement de deux contacts : l'historique de l'ancien passe au nouveau. */
+    @Query("UPDATE messages SET contactShortId = :nouveau WHERE contactShortId = :ancien")
+    suspend fun reassigner(ancien: String, nouveau: String)
+
+    @Query("DELETE FROM messages WHERE contactShortId = :contactShortId")
+    suspend fun supprimerPour(contactShortId: String)
 
     /** Contacts qui ont des messages envoyés pas encore accusés. */
     @Query("SELECT DISTINCT contactShortId FROM messages WHERE direction = 'OUT' AND delivered = 0")
