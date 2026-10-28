@@ -17,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import com.relay.app.model.RelayContact
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
@@ -195,7 +196,10 @@ fun FicheContactScreen(
         DialogueRenommer(
             actuel = nom.orEmpty(),
             onValider = { viewModel.renommer(contactId, it); renommer = false },
-            onAnnuler = { renommer = false }
+            onAnnuler = { renommer = false },
+            homonyme = { viewModel.contactDuMemeNom(contactId, it) },
+            // L'autre contact rejoint celui-ci : la fiche ouverte reste valable
+            onRegrouper = { d -> viewModel.regrouper(d.shortId, contactId); renommer = false }
         )
     }
 }
@@ -307,8 +311,17 @@ private fun EchelleConfiance(actuel: Confiance, ouvert: Confiance?, onOuvrir: (C
 }
 
 @Composable
-private fun DialogueRenommer(actuel: String, onValider: (String) -> Unit, onAnnuler: () -> Unit) {
+private fun DialogueRenommer(
+    actuel: String,
+    onValider: (String) -> Unit,
+    onAnnuler: () -> Unit,
+    /** Contact déjà affiché sous ce nom, pour éviter deux « Koffi » qu'on ne distingue plus. */
+    homonyme: suspend (String) -> RelayContact? = { null },
+    onRegrouper: (RelayContact) -> Unit = {},
+) {
     var texte by remember { mutableStateOf(actuel) }
+    var doublon by remember { mutableStateOf<RelayContact?>(null) }
+    LaunchedEffect(texte) { doublon = homonyme(texte) }
     AlertDialog(
         onDismissRequest = onAnnuler,
         title = { Text("Nom du contact") },
@@ -321,8 +334,21 @@ private fun DialogueRenommer(actuel: String, onValider: (String) -> Unit, onAnnu
                 OutlinedTextField(
                     value = texte, onValueChange = { texte = it.take(40) },
                     singleLine = true, label = { Text("Nom") },
+                    isError = doublon != null,
                     modifier = Modifier.padding(top = 12.dp).fillMaxWidth()
                 )
+                doublon?.let { d ->
+                    Text(
+                        "Un autre contact s'appelle déjà « ${d.nomAffiche} » (appareil ${d.shortId.takeLast(4).uppercase()}). " +
+                            "Choisissez un nom qui les distingue, par exemple avec le téléphone, ou regroupez-les si c'est la même personne.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                    TextButton(onClick = { onRegrouper(d) }, modifier = Modifier.heightIn(min = 48.dp)) {
+                        Text("C'est la même personne : regrouper")
+                    }
+                }
             }
         },
         confirmButton = { TextButton(onClick = { onValider(texte) }) { Text("Enregistrer") } },

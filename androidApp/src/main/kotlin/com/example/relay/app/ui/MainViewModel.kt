@@ -98,6 +98,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 .maxByOrNull { it.firstSeenAt }
         }
 
+    /** Un autre contact déjà affiché sous ce nom (sans tenir compte des majuscules). */
+    suspend fun contactDuMemeNom(contactId: String, nom: String): RelayContact? {
+        val cherche = nom.trim().lowercase().ifEmpty { return null }
+        return repo.observeContacts().first()
+            .firstOrNull { it.shortId != contactId && it.nomAffiche?.trim()?.lowercase() == cherche }
+    }
+
     fun regrouper(ancien: String, nouveau: String) {
         viewModelScope.launch { repo.regrouper(ancien, nouveau) }
     }
