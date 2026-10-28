@@ -330,6 +330,18 @@ Chaque entrée suit le même schéma : **constat**, **cause**, **solution**, **l
 
 > **Leçon.** Un identifiant affiché n'est pas une preuve d'identité ; il doit au moins coûter cher à imiter, et la vérification en personne reste la vraie garantie.
 
+### 24. Premier essai à trois téléphones : la session jetée à tort
+
+- **Constat** (Tecno BG6i Android 13, Infinix X6531 Android 14, un troisième téléphone ; journaux de diagnostic des deux premiers). Découverte, sessions, accusés, vérification en un scan, nom transmis sans rescanner et modes batterie fonctionnent. Mais l'Infinix finit par ne plus rien déchiffrer du Tecno : « InvalidMessageException » en boucle.
+- **Cause.** Le renouvellement automatique de session ajouté en section 19 : un message de l'Infinix restait sans accusé parce que ses envois Bluetooth échouaient (signal à -89 dBm, une adresse refusée toutes les 30 s pendant 7 minutes). L'Infinix en concluait que la session était cassée et la jetait, toutes les 2 à 3 minutes ; le Tecno, lui, continuait d'écrire avec l'ancienne.
+- **Solution.**
+  - plus de renouvellement sur simple absence d'accusé ; c'est le destinataire, quand il n'arrive pas à déchiffrer, qui envoie une demande signée de nouvelle session (nouveau type de paquet), au plus une fois par minute ; l'expéditeur la vérifie avec la clé du contact, repart de ses dernières clés et rechiffre ce qui attend ;
+  - quand l'envoi direct vient d'échouer, le paquet part aussi par les relais au lieu de s'acharner sur une adresse qui ne répond pas ;
+  - journal : messages reçus notés, échecs d'envoi avec le nom de l'appareil ;
+  - « Relancer le mesh » appuyé plusieurs fois de suite ne relance qu'une fois.
+
+> **Leçon.** Un mécanisme de réparation automatique doit agir sur une preuve du problème (l'autre dit qu'il ne déchiffre pas), jamais sur un symptôme ambigu (un accusé qui tarde peut venir de la radio).
+
 ---
 
 ## Points ouverts

@@ -33,6 +33,8 @@ class MeshRouter(
     var onDoublonPourNous: ((RelayPacket) -> Unit)? = null
     /** Quelqu'un vient de scanner notre QR et nous envoie sa clé. */
     var onVerification: ((RelayPacket) -> Unit)? = null
+    /** Un contact n'arrive plus à déchiffrer nos messages et demande une nouvelle session. */
+    var onResync: ((RelayPacket) -> Unit)? = null
 
     /**
      * Paquets destinés à d'autres, gardés en phase Wait jusqu'à ce que leur
@@ -148,6 +150,8 @@ class MeshRouter(
             // Pour nous : à vérifier ; sinon acheminé comme un message
             PacketType.VERIFICATION  ->
                 if (packet.recipientId == localShortId) onVerification?.invoke(packet) else handleMessage(packet)
+            PacketType.RESYNC        ->
+                if (packet.recipientId == localShortId) onResync?.invoke(packet) else handleMessage(packet)
         }
     }
 

@@ -47,7 +47,8 @@ object PacketCodec {
         PacketType.PREKEY_GOSSIP to 2,
         PacketType.DEFERRED_INIT to 3,
         PacketType.ACK to 4,
-        PacketType.VERIFICATION to 5
+        PacketType.VERIFICATION to 5,
+        PacketType.RESYNC to 6
     )
     private val TYPES = CODES.entries.associate { (type, code) -> code to type }
 

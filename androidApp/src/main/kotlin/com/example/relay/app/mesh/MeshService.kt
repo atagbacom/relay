@@ -261,7 +261,8 @@ class MeshService : Service() {
                 envoi.apresSucces?.invoke()
             } else {
                 echecs[adresse] = System.currentTimeMillis()
-                EtatMesh.noter("Envoi Bluetooth vers $adresse échoué : nouvel essai plus tard")
+                val qui = nodeTracker.shortIdDe(adresse)?.let { "$it ($adresse)" } ?: adresse
+                EtatMesh.noter("Envoi Bluetooth vers $qui échoué : nouvel essai plus tard")
             }
         }
     }
@@ -277,13 +278,26 @@ class MeshService : Service() {
         if (actifs.isEmpty()) return
         repo.envois.tous().sortedByDescending { it.id in idsPrioritaires }.forEach { e ->
             if (!force && maintenant - e.dernierEssai < 30_000) return@forEach
-            val direct = actifs.firstOrNull { it.shortId == e.destinataire }
-            val cibles = if (direct != null) listOf(direct.macAddress)
-                         else nodeTracker.getBestRelays(localShortId, 3).map { it.macAddress }
+            val cibles = ciblesPour(e.destinataire)
             if (cibles.isEmpty()) return@forEach
             cibles.forEach { mettreEnFile(it, e.paquet, e.id, prioritaire = e.id in idsPrioritaires) }
             repo.envois.noterEssai(e.id, maintenant)
         }
+    }
+
+    /**
+     * Où envoyer un paquet pour [destinataire] : directement s'il est à portée ;
+     * si l'envoi direct vient d'échouer (signal trop faible, adresse qui ne
+     * répond plus), aussi par les relais au lieu de s'acharner (essai à trois :
+     * une adresse refusait toutes les 30 s pendant 7 minutes).
+     */
+    private fun ciblesPour(destinataire: String): List<String> {
+        val direct = nodeTracker.getActiveNodes(withinMs = 30_000).firstOrNull { it.shortId == destinataire }?.macAddress
+        val directEnEchec = direct != null && echecs[direct]?.let { System.currentTimeMillis() - it < 60_000 } == true
+        val relais = if (direct == null || directEnEchec)
+            nodeTracker.getBestRelays(localShortId, 3).filter { it.shortId != destinataire }.map { it.macAddress }
+        else emptyList()
+        return listOfNotNull(direct) + relais
     }
 
     // ─── Bluetooth ───────────────────────────────────────────
@@ -377,6 +391,9 @@ class MeshService : Service() {
             }
         }
 
+        // Un contact n'arrive plus à nous déchiffrer
+        router.onResync = { packet -> scope.launch { recevoirResync(packet) } }
+
         // Quelqu'un vient de scanner notre QR et nous envoie sa clé
         router.onVerification = { packet ->
             scope.launch { recevoirVerification(packet) }
@@ -387,6 +404,8 @@ class MeshService : Service() {
             scope.launch { envoyerAck(packet) }
         }
     }
+    @Volatile private var derniereRelance = 0L
+
     private val anciensSignales = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     private fun setupScanner() {
@@ -512,24 +531,75 @@ class MeshService : Service() {
             .forEach { chiffrerEtEnvoyer(contact, it.id, it.plaintext) }
     }
 
-    /**
-     * Session cassée (l'autre ne déchiffre plus nos messages, aucun accusé ne
-     * revient) : on repart de ses clés fraîches et on rechiffre ce qui attend.
-     * Les identifiants restent les mêmes : un message déjà reçu n'est pas doublé.
+    /*
+     * Session cassée : c'est le destinataire qui le sait, quand il n'arrive pas
+     * à déchiffrer. Il nous envoie alors une demande de resynchronisation ; on
+     * repart de ses dernières clés et on rechiffre ce qui attend (mêmes
+     * identifiants : un message déjà reçu n'est pas doublé).
+     *
+     * Avant, l'expéditeur renouvelait de lui-même la session dès qu'un accusé
+     * tardait. Or un accusé tarde surtout quand le Bluetooth échoue : l'essai à
+     * trois a montré la session jetée toutes les 2 à 3 minutes, et l'autre ne
+     * pouvait plus rien déchiffrer.
      */
-    private val derniereResync = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
-    private suspend fun resynchroniser(contact: String, bundle: org.signal.libsignal.protocol.state.PreKeyBundle) {
+    /** Dernières clés reçues de chaque contact, pour reconstruire une session à sa demande. */
+    private val derniersBundles = java.util.concurrent.ConcurrentHashMap<String, org.signal.libsignal.protocol.state.PreKeyBundle>()
+    /** Contacts qui ont demandé une resynchronisation dont on attend encore les clés. */
+    private val resyncEnAttente = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private val derniereResync = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private val derniereDemande = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    /** Côté destinataire : message indéchiffrable, on demande une nouvelle session (au plus chaque minute). */
+    private fun demanderResync(contact: String, messageId: String) {
         val maintenant = System.currentTimeMillis()
-        if (maintenant - (derniereResync[contact] ?: 0L) < 120_000) return
-        val bloques = repo.envois.pour(contact).filter { it.tentatives >= 3 && maintenant - it.creeA > 60_000 }
-        if (bloques.isEmpty()) return
+        if (maintenant - (derniereDemande[contact] ?: 0L) < 60_000) return
+        derniereDemande[contact] = maintenant
+        val contenu = messageId.toByteArray()
+        val packet = RelayPacket(
+            id = UUID.randomUUID().toString(),
+            type = PacketType.RESYNC,
+            senderId = localShortId,
+            recipientId = contact,
+            payload = contenu,
+            signature = signPayload(contenu),
+            ttl = RelayPacket.MAX_HOPS
+        )
+        ciblesPour(contact).forEach { sendPacketTo(it, packet) }
+        EtatMesh.noter("Nouvelle session demandée à $contact")
+    }
+
+    /** Côté expéditeur : demande reçue, vérifiée avec la clé du contact. */
+    private suspend fun recevoirResync(packet: RelayPacket) {
+        val contact = repo.getContact(packet.senderId) ?: return
+        val authentique = runCatching {
+            org.signal.libsignal.protocol.ecc.Curve.verifySignature(contact.publicKey.publicKey, packet.payload, packet.signature)
+        }.getOrDefault(false)
+        if (!authentique) {
+            EtatMesh.noter("Demande de nouvelle session de ${packet.senderId} rejetée : signature invalide")
+            return
+        }
+        val bundle = derniersBundles[packet.senderId]
+        if (bundle == null) {
+            resyncEnAttente.add(packet.senderId)
+            EtatMesh.noter("${packet.senderId} demande une nouvelle session : en attente de ses clés")
+            envoyerNosCles(packet.senderId)
+            return
+        }
+        reconstruireSession(packet.senderId, bundle)
+    }
+
+    private suspend fun reconstruireSession(contact: String, bundle: org.signal.libsignal.protocol.state.PreKeyBundle) {
+        resyncEnAttente.remove(contact)
+        val maintenant = System.currentTimeMillis()
+        if (maintenant - (derniereResync[contact] ?: 0L) < 60_000) return
         derniereResync[contact] = maintenant
-        EtatMesh.noter("Session avec $contact renouvelée : ${bloques.size} message(s) sans accusé")
         val adresse = SignalProtocolAddress(contact, RelaySession.DEVICE_ID)
         signalStore.deleteSession(adresse)
         SessionBuilder(signalStore, adresse).process(bundle)
-        bloques.forEach { repo.envois.supprimer(it.id) }
+        // Les paquets en attente ont été chiffrés avec l'ancienne session : rechiffrés
+        repo.envois.pour(contact).forEach { repo.envois.supprimer(it.id) }
+        EtatMesh.noter("Session avec $contact reconstruite à sa demande")
         envoyerEnAttente(contact)
     }
 
@@ -545,6 +615,7 @@ class MeshService : Service() {
             val plaintext = RelayMessage.decrypt(cipher, encrypted)
 
             Log.d(TAG, "Message déchiffré de ${packet.senderId} : $plaintext")
+            EtatMesh.noter("Message ${packet.id.take(8)} de ${packet.senderId} reçu")
 
             // Persiste
             repo.saveMessage(
@@ -581,8 +652,9 @@ class MeshService : Service() {
             envoyerAck(packet)
         } catch (e: Exception) {
             EtatMesh.noter("Message de ${packet.senderId} indéchiffrable : ${e.javaClass.simpleName} ${e.message.orEmpty()}")
-            // L'expéditeur reçoit nos clés : s'il n'a pas d'accusé, il rouvrira la session
+            // Nos clés, et la demande explicite de repartir d'une nouvelle session
             envoyerNosCles(packet.senderId)
+            demanderResync(packet.senderId, packet.id)
         }
     }
 
@@ -638,10 +710,7 @@ class MeshService : Service() {
             signature = signPayload(message.id.toByteArray()),
             ttl = RelayPacket.MAX_HOPS
         )
-        val direct = nodeTracker.getActiveNodes(withinMs = 30_000).firstOrNull { it.shortId == message.senderId }
-        val cibles = if (direct != null) listOf(direct.macAddress)
-                     else nodeTracker.getBestRelays(localShortId, SprayAndWait.SPRAY_COPIES).map { it.macAddress }
-        cibles.forEach { sendPacketTo(it, ack) }
+        ciblesPour(message.senderId).forEach { sendPacketTo(it, ack) }
     }
     // ─── Gossip prekeys ──────────────────────────────────────
 
@@ -678,9 +747,7 @@ class MeshService : Service() {
 
     /** Nos clés vers un contact : directement s'il est à portée, sinon par les relais. */
     private suspend fun envoyerNosCles(contact: String) {
-        val direct = nodeTracker.getActiveNodes(withinMs = 30_000).firstOrNull { it.shortId == contact }
-        val cibles = if (direct != null) listOf(direct.macAddress)
-                     else nodeTracker.getBestRelays(localShortId, 3).map { it.macAddress }
+        val cibles = ciblesPour(contact)
         if (cibles.isEmpty()) return
         val packet = gossip.createGossipPacket(localShortId, session.createPreKeyBundle(avecCleUnique = false), monNom(), maVersion)
         cibles.forEach { sendPacketTo(it, packet) }
@@ -743,6 +810,7 @@ class MeshService : Service() {
             }
         }
         nodeTracker.markPreKeyExchanged(senderId)
+        derniersBundles[senderId] = bundle
 
         try {
             val adresse = SignalProtocolAddress(senderId, RelaySession.DEVICE_ID)
@@ -751,8 +819,8 @@ class MeshService : Service() {
                 // Qu'il puisse aussi nous écrire, même si notre envoi de clés s'est perdu
                 envoyerNosCles(senderId)
                 envoyerEnAttente(senderId)
-            } else {
-                resynchroniser(senderId, bundle)
+            } else if (senderId in resyncEnAttente) {
+                reconstruireSession(senderId, bundle)
             }
         } catch (e: Exception) {
             EtatMesh.noter("Session impossible avec $senderId : ${e.javaClass.simpleName} ${e.message.orEmpty()}")
@@ -845,6 +913,10 @@ class MeshService : Service() {
             ACTION_VERIFIER_MAJ -> scope.launch { verifierMajEnLigne(force = true) }
             ACTION_RELANCER -> scope.launch {
                 pret.await()
+                // Plusieurs appuis rapprochés : une seule relance (essai : 7 relances en 5 s)
+                val maintenant = System.currentTimeMillis()
+                if (maintenant - derniereRelance < 5_000) return@launch
+                derniereRelance = maintenant
                 EtatMesh.noter("Relance du mesh demandée")
                 arreterBle()
                 demarrerBle()
