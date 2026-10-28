@@ -145,4 +145,43 @@ class RouteurTest {
         assertEquals(listOf("rs-1"), recues)
         assertEquals(listOf("rs-2"), gardes)
     }
+
+    @Test
+    fun `un paquet à la signature invalide n'est ni gardé ni relayé`() {
+        val r = MeshRouter("05cccccc", NodeTracker(), verifierSignature = { it.id != "falsifie" })
+        val gardes = mutableListOf<String>()
+        val rejets = mutableListOf<String>()
+        r.onGarde = { gardes += it.id }
+        r.onRejet = { p, _ -> rejets += p.id }
+        r.handle(paquet("falsifie", pour = "05dddddd"))
+        r.handle(paquet("honnete", pour = "05dddddd"))
+        assertEquals(listOf("honnete"), gardes)
+        assertEquals(listOf("falsifie"), rejets)
+    }
+
+    @Test
+    fun `clé inconnue, le paquet est relayé et le destinataire vérifiera`() {
+        val r = MeshRouter("05cccccc", NodeTracker(), verifierSignature = { null })
+        val gardes = mutableListOf<String>()
+        r.onGarde = { gardes += it.id }
+        r.handle(paquet("inconnu", pour = "05dddddd"))
+        assertEquals(listOf("inconnu"), gardes)
+    }
+
+    @Test
+    fun `un appareil qui inonde le réseau est freiné, ses messages pour nous passent`() {
+        var maintenant = 0L
+        val r = MeshRouter("05cccccc", NodeTracker(), horloge = { maintenant })
+        var gardes = 0
+        var pourNous = 0
+        r.onGarde = { gardes++ }
+        r.onMessageForUs = { pourNous++ }
+        repeat(MeshRouter.DEBIT_MAX_PAR_MINUTE + 20) { r.handle(paquet("f-$it", de = "05eeeeee", pour = "05dddddd")) }
+        assertEquals(MeshRouter.DEBIT_MAX_PAR_MINUTE, gardes)
+        r.handle(paquet("pour-nous", de = "05eeeeee", pour = "05cccccc"))
+        assertEquals(1, pourNous)
+        maintenant += 61_000
+        r.handle(paquet("apres", de = "05eeeeee", pour = "05dddddd"))
+        assertEquals(MeshRouter.DEBIT_MAX_PAR_MINUTE + 1, gardes)
+    }
 }

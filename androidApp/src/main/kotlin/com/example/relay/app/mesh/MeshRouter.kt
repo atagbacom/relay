@@ -19,7 +19,32 @@ class MeshRouter(
     private val nodeTracker: NodeTracker,
     /** Mode batterie : faut-il encore relayer ce paquet ? (BatteryMonitor.shouldRelay) */
     private val peutRelayer: (RelayPacket) -> Boolean = { true },
+    /**
+     * Signature du paquet par son expéditeur : vrai si valide, faux si
+     * invalide, null si la clé de l'expéditeur est inconnue ici.
+     */
+    private val verifierSignature: (RelayPacket) -> Boolean? = { null },
+    private val horloge: () -> Long = System::currentTimeMillis,
 ) {
+    companion object {
+        /** Paquets acceptés par expéditeur et par minute, hors paquets pour nous. */
+        const val DEBIT_MAX_PAR_MINUTE = 60
+    }
+
+    /** Un paquet vient d'être rejeté (signature fausse, débit dépassé) : pour le journal. */
+    var onRejet: ((RelayPacket, String) -> Unit)? = null
+
+    /** Paquets reçus de chaque expéditeur dans la minute en cours. */
+    private val debit = HashMap<String, Pair<Long, Int>>()
+
+    /** Vrai si l'expéditeur dépasse son débit : un appareil qui inonde le réseau est freiné. */
+    private fun debitDepasse(expediteur: String): Boolean {
+        val maintenant = horloge()
+        val (depuis, n) = debit[expediteur]?.takeIf { maintenant - it.first < 60_000 } ?: (maintenant to 0)
+        debit[expediteur] = depuis to n + 1
+        if (debit.size > 500) debit.entries.removeAll { maintenant - it.value.first >= 60_000 }
+        return n + 1 > DEBIT_MAX_PAR_MINUTE
+    }
     private val bloom = BloomFilter()
     private val sprayAndWait = SprayAndWait(localShortId)
 
@@ -132,6 +157,20 @@ class MeshRouter(
         // ── Expiration ─────────────────────────────────────
         if (!packet.isValid()) {
             Log.v("MeshRouter", "Paquet expiré : ${packet.id.take(8)}")
+            return
+        }
+
+        // ── Intégrité à chaque saut ────────────────────────
+        // Avant, seul le destinataire vérifiait : un relais faisait suivre un
+        // paquet falsifié, qui encombrait le réseau jusqu'au bout.
+        if (verifierSignature(packet) == false) {
+            onRejet?.invoke(packet, "signature invalide")
+            return
+        }
+
+        // ── Débit par expéditeur (faux pairs, inondation) ──
+        if (packet.recipientId != localShortId && debitDepasse(packet.senderId)) {
+            onRejet?.invoke(packet, "débit dépassé")
             return
         }
 

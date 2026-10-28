@@ -13,6 +13,7 @@ import com.relay.app.storage.RelaisEntity
 import com.relay.app.storage.MessageEntity
 import com.relay.app.storage.ContactEntity
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.first
 import org.signal.libsignal.protocol.SignalProtocolAddress
 import org.signal.libsignal.protocol.SessionBuilder
 import org.signal.libsignal.protocol.SessionCipher
@@ -121,7 +122,18 @@ class MeshService : Service() {
             }
 
 
-            router = MeshRouter(localShortId, nodeTracker, batteryMonitor::shouldRelay)
+            // Clés connues : contacts, puis clés reçues signées au fil des rencontres
+            repo.observeContacts().first().forEach { clesParAppareil[it.shortId] = it.publicKey }
+            router = MeshRouter(localShortId, nodeTracker, batteryMonitor::shouldRelay, ::signatureValide)
+            router.onRejet = { p, raison ->
+                // Une ligne par expéditeur et par minute au plus
+                val cle = "${p.senderId}|$raison"
+                val maintenant = System.currentTimeMillis()
+                if (maintenant - (derniersRejets[cle] ?: 0L) > 60_000) {
+                    derniersRejets[cle] = maintenant
+                    EtatMesh.noter("Paquet de ${p.senderId} rejeté : $raison")
+                }
+            }
             // Copies gardées pour d'autres : rechargées, elles survivent à un redémarrage
             router.restaurer(repo.relais.valides(System.currentTimeMillis()).mapNotNull { PacketCodec.decode(it.paquet) })
             router.onGarde = { p ->
@@ -405,6 +417,24 @@ class MeshService : Service() {
         }
     }
     @Volatile private var derniereRelance = 0L
+
+    /** Clé publique de chaque appareil connu, pour vérifier les paquets à chaque saut. */
+    private val clesParAppareil = java.util.concurrent.ConcurrentHashMap<String, org.signal.libsignal.protocol.IdentityKey>()
+    private val derniersRejets = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    /**
+     * Le paquet est-il bien signé par son expéditeur ? Les clés diffusées
+     * portent leur propre clé ; pour les autres types, il faut connaître
+     * l'expéditeur (null sinon : le paquet est relayé, le destinataire vérifiera).
+     */
+    private fun signatureValide(p: RelayPacket): Boolean? = when (p.type) {
+        PacketType.PREKEY_GOSSIP -> gossip.verifyAndExtract(p)?.also { clesParAppareil[p.senderId] = it.identityKey } != null
+        PacketType.VERIFICATION -> null  // clé portée par le contenu, vérifiée par le destinataire avec le code du QR
+        else -> clesParAppareil[p.senderId]?.let { cle ->
+            runCatching { org.signal.libsignal.protocol.ecc.Curve.verifySignature(cle.publicKey, p.payload, p.signature) }
+                .getOrDefault(false)
+        }
+    }
 
     private val anciensSignales = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
