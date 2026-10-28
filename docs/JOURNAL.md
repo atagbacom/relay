@@ -353,6 +353,17 @@ Chaque entrée suit le même schéma : **constat**, **cause**, **solution**, **l
 
 > **Leçon.** Quand la sécurité interdit de deviner, l'interface doit aider l'utilisateur à décider, en lui disant ce qu'elle ne peut pas garantir.
 
+### 26. Intégrité vérifiée à chaque saut, débit limité par appareil
+
+- **Constat.** Seul le destinataire vérifiait la signature d'un paquet : un relais faisait suivre un paquet falsifié, qui encombrait le réseau jusqu'au bout. Rien ne freinait un appareil qui en envoie des milliers (faux pairs, inondation).
+- **Solution.**
+  - chaque relais vérifie la signature quand il connaît la clé de l'expéditeur (contacts, clés diffusées) ; un paquet de clés porte sa propre clé et se vérifie toujours ; signature fausse = paquet jeté et noté au journal ; clé inconnue = paquet relayé, le destinataire vérifiera ;
+  - 60 paquets par minute au plus par expéditeur, hors paquets qui nous sont destinés ;
+  - 3 tests du routeur.
+- **Limite connue.** La signature couvre le contenu, pas l'en-tête (identifiant du paquet, destinataire) : un relais malveillant peut encore rejouer un paquet sous un autre identifiant ; la limite de débit en borne l'effet. Signer l'en-tête demandera une nouvelle version du format.
+
+> **Leçon.** Dans un réseau où chacun relaie pour les autres, chaque relais est un gardien : vérifier tard, c'est laisser l'abus voyager.
+
 ---
 
 ## Points ouverts
