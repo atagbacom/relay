@@ -41,5 +41,6 @@ enum class PacketType {
     PREKEY_GOSSIP,    // Bundle de prekeys signé pour propagation
     DEFERRED_INIT,    // Initiation de session différée
     ACK,              // Accusé de réception
-    VERIFICATION      // Vérification en personne : clé de celui qui vient de scanner notre QR
+    VERIFICATION,     // Vérification en personne : clé de celui qui vient de scanner notre QR
+    RESYNC            // Le destinataire n'arrive pas à déchiffrer : il demande une nouvelle session
 }

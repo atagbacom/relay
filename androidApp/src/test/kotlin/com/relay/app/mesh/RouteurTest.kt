@@ -132,4 +132,17 @@ class RouteurTest {
         assertFalse("déjà à portée : rien à relancer", t.vuParConnexion("05dddddd", "55:55:55:55:55:55"))
         assertEquals("44:44:44:44:44:44", t.getMacAddress("05dddddd"))
     }
+
+    @Test
+    fun `une demande de nouvelle session pour nous est remise, sinon relayée`() {
+        val r = MeshRouter("05cccccc", NodeTracker())
+        val recues = mutableListOf<String>()
+        val gardes = mutableListOf<String>()
+        r.onResync = { recues += it.id }
+        r.onGarde = { gardes += it.id }
+        r.handle(paquet("rs-1", PacketType.RESYNC, de = "05dddddd", pour = "05cccccc", payload = "m-9".toByteArray()))
+        r.handle(paquet("rs-2", PacketType.RESYNC, de = "05dddddd", pour = "05eeeeee", payload = "m-8".toByteArray()))
+        assertEquals(listOf("rs-1"), recues)
+        assertEquals(listOf("rs-2"), gardes)
+    }
 }

@@ -122,6 +122,9 @@ class NodeTracker {
     fun adresseRecente(shortId: String, withinMs: Long = 30_000): String? =
         nodes[shortId]?.takeIf { System.currentTimeMillis() - it.lastSeenAt < withinMs }?.macAddress
 
+    /** L'appareil connu à cette adresse, pour des journaux lisibles. */
+    fun shortIdDe(macAddress: String): String? = nodes.values.firstOrNull { it.macAddress == macAddress }?.shortId
+
     /**
      * Retourne tous les nœuds actifs récemment.
      */
